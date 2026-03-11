@@ -37,9 +37,9 @@ import {
   MenuItem,
   Switch,
 } from '@mui/material';
-import { ArrowBack, Delete, Link, UploadFile, ExpandMore, ExpandLess, CompareArrows, Comment, Send, Reply } from '@mui/icons-material';
-import { getProduct, updateProduct, transitionProduct, getProductVersions, restoreProductVersion, getVersionComments, createVersionComment, getProductComments, createProductComment, deleteProductComment, getCommentReplies, submitForReview, approveProduct, rejectProduct } from '../../api/products';
-import type { VersionComment } from '../../api/products';
+import { ArrowBack, Delete, Link, UploadFile, ExpandMore, ExpandLess, CompareArrows, Comment, Send, Reply, Edit, Check, Close, FilterList, Label } from '@mui/icons-material';
+import { getProduct, updateProduct, transitionProduct, getProductVersions, restoreProductVersion, getVersionComments, createVersionComment, getProductComments, createProductComment, updateProductComment, deleteProductComment, getCommentReplies, submitForReview, approveProduct, rejectProduct } from '../../api/products';
+import type { VersionComment, CommentFilters } from '../../api/products';
 import { listMedia, uploadMedia, deleteMedia } from '../../api/media';
 import { getProductTranslations, upsertTranslation, deleteTranslation } from '../../api/i18n';
 import { getProductQuality } from '../../api/quality';
@@ -110,6 +110,18 @@ export default function ProductDetail() {
   // Product-level comments
   const [productComments, setProductComments] = useState<VersionComment[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [newCommentTags, setNewCommentTags] = useState('');
+  // Edit mode
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentBody, setEditCommentBody] = useState('');
+  const [editCommentTags, setEditCommentTags] = useState('');
+  // Filters
+  const [commentFilters, setCommentFilters] = useState<CommentFilters>({});
+  const [showCommentFilters, setShowCommentFilters] = useState(false);
+  const [filterAuthorId, setFilterAuthorId] = useState('');
+  const [filterTag, setFilterTag] = useState('');
+  const [filterSince, setFilterSince] = useState('');
+  const [filterUntil, setFilterUntil] = useState('');
   // Threaded replies
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
@@ -130,9 +142,9 @@ export default function ProductDetail() {
     setSyncStatuses(st);
   }, [sku]);
 
-  const refreshProductComments = useCallback(async () => {
+  const refreshProductComments = useCallback(async (filters?: CommentFilters) => {
     if (!sku) return;
-    setProductComments(await getProductComments(sku).catch(() => []));
+    setProductComments(await getProductComments(sku, filters).catch(() => []));
   }, [sku]);
 
   const refreshMedia = useCallback(async () => {
@@ -490,10 +502,12 @@ export default function ProductDetail() {
     if (!sku) return;
     const body = newComment.trim();
     if (!body) return;
+    const tags = newCommentTags.split(',').map((t) => t.trim()).filter(Boolean);
     try {
-      await createProductComment(sku, body);
+      await createProductComment(sku, body, undefined, tags.length ? tags : undefined);
       setNewComment('');
-      await refreshProductComments();
+      setNewCommentTags('');
+      await refreshProductComments(commentFilters);
     } catch {
       setErrMsg('Error al añadir comentario');
     }
@@ -507,7 +521,7 @@ export default function ProductDetail() {
       await createProductComment(sku, body, parentId);
       setReplyText('');
       setReplyingTo(null);
-      await refreshProductComments();
+      await refreshProductComments(commentFilters);
       const freshReplies = await getCommentReplies(sku, parentId);
       setReplies((prev) => ({ ...prev, [parentId]: freshReplies }));
       setExpandedReplies((prev) => new Set(prev).add(parentId));
@@ -531,11 +545,49 @@ export default function ProductDetail() {
     if (!sku) return;
     try {
       await deleteProductComment(sku, commentId);
-      await refreshProductComments();
+      await refreshProductComments(commentFilters);
       setMessage('Comentario eliminado');
     } catch {
       setErrMsg('Error al eliminar comentario');
     }
+  };
+
+  const handleStartEditComment = (c: VersionComment) => {
+    setEditingCommentId(c.id);
+    setEditCommentBody(c.body);
+    setEditCommentTags((c.tags || []).join(', '));
+  };
+
+  const handleSaveEditComment = async (commentId: string) => {
+    if (!sku) return;
+    const tags = editCommentTags.split(',').map((t) => t.trim()).filter(Boolean);
+    try {
+      await updateProductComment(sku, commentId, { body: editCommentBody, tags: tags.length ? tags : [] });
+      setEditingCommentId(null);
+      await refreshProductComments(commentFilters);
+      setMessage('Comentario actualizado');
+    } catch {
+      setErrMsg('Error al editar comentario');
+    }
+  };
+
+  const handleApplyCommentFilters = () => {
+    const filters: CommentFilters = {};
+    if (filterAuthorId.trim()) filters.author_id = filterAuthorId.trim();
+    if (filterTag.trim()) filters.tag = filterTag.trim();
+    if (filterSince.trim()) filters.since = new Date(filterSince).toISOString();
+    if (filterUntil.trim()) filters.until = new Date(filterUntil).toISOString();
+    setCommentFilters(filters);
+    refreshProductComments(filters);
+  };
+
+  const handleClearCommentFilters = () => {
+    setFilterAuthorId('');
+    setFilterTag('');
+    setFilterSince('');
+    setFilterUntil('');
+    setCommentFilters({});
+    refreshProductComments({});
   };
 
   return (
@@ -928,35 +980,95 @@ export default function ProductDetail() {
 
       {tab === 6 && (
         <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>Comentarios</Typography>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+            <Typography variant="h6">Comentarios</Typography>
+            <Tooltip title="Filtrar comentarios">
+              <IconButton onClick={() => setShowCommentFilters((v) => !v)}>
+                <FilterList color={Object.keys(commentFilters).length > 0 ? 'primary' : 'inherit'} />
+              </IconButton>
+            </Tooltip>
+          </Box>
           <Typography variant="body2" color="text.secondary" mb={2}>
             Discusion general sobre este producto entre los miembros del equipo.
           </Typography>
 
+          {/* Filter panel */}
+          <Collapse in={showCommentFilters}>
+            <Box sx={{ mb: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'flex-end' }}>
+              <TextField
+                label="ID de autor"
+                size="small"
+                value={filterAuthorId}
+                onChange={(e) => setFilterAuthorId(e.target.value)}
+                sx={{ width: 200 }}
+              />
+              <TextField
+                label="Etiqueta"
+                size="small"
+                value={filterTag}
+                onChange={(e) => setFilterTag(e.target.value)}
+                sx={{ width: 160 }}
+              />
+              <TextField
+                label="Desde"
+                size="small"
+                type="datetime-local"
+                value={filterSince}
+                onChange={(e) => setFilterSince(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ width: 200 }}
+              />
+              <TextField
+                label="Hasta"
+                size="small"
+                type="datetime-local"
+                value={filterUntil}
+                onChange={(e) => setFilterUntil(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                sx={{ width: 200 }}
+              />
+              <Button variant="contained" size="small" onClick={handleApplyCommentFilters}>Aplicar</Button>
+              {Object.keys(commentFilters).length > 0 && (
+                <Button size="small" onClick={handleClearCommentFilters}>Limpiar</Button>
+              )}
+            </Box>
+          </Collapse>
+
           {/* Input nuevo comentario */}
-          <Box display="flex" gap={1} mb={3}>
+          <Box sx={{ mb: 1 }}>
+            <Box display="flex" gap={1} mb={1}>
+              <TextField
+                size="small"
+                placeholder="Escribe un comentario..."
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                fullWidth
+                multiline
+                maxRows={4}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmitProductComment();
+                  }
+                }}
+              />
+              <IconButton
+                color="primary"
+                onClick={handleSubmitProductComment}
+                disabled={!newComment.trim()}
+              >
+                <Send />
+              </IconButton>
+            </Box>
             <TextField
               size="small"
-              placeholder="Escribe un comentario..."
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Etiquetas (separadas por coma, ej: pendiente revision, aprobado)"
+              value={newCommentTags}
+              onChange={(e) => setNewCommentTags(e.target.value)}
               fullWidth
-              multiline
-              maxRows={4}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmitProductComment();
-                }
-              }}
+              sx={{ mb: 2 }}
+              InputProps={{ startAdornment: <Label fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }}
             />
-            <IconButton
-              color="primary"
-              onClick={handleSubmitProductComment}
-              disabled={!newComment.trim()}
-            >
-              <Send />
-            </IconButton>
           </Box>
 
           {productComments.length === 0 ? (
@@ -975,12 +1087,22 @@ export default function ProductDetail() {
                       {c.author_name}
                       <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
                         {new Date(c.created_at).toLocaleString()}
+                        {c.updated_at && c.updated_at !== c.created_at && (
+                          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                            (editado)
+                          </Typography>
+                        )}
                       </Typography>
                     </Typography>
                     <Box>
                       <Tooltip title="Responder">
                         <IconButton size="small" onClick={() => { setReplyingTo(replyingTo === c.id ? null : c.id); setReplyText(''); }}>
                           <Reply fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Editar comentario">
+                        <IconButton size="small" onClick={() => handleStartEditComment(c)}>
+                          <Edit fontSize="small" />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Eliminar comentario">
@@ -990,7 +1112,48 @@ export default function ProductDetail() {
                       </Tooltip>
                     </Box>
                   </Box>
-                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{c.body}</Typography>
+
+                  {/* Edit mode */}
+                  {editingCommentId === c.id ? (
+                    <Box>
+                      <TextField
+                        size="small"
+                        value={editCommentBody}
+                        onChange={(e) => setEditCommentBody(e.target.value)}
+                        fullWidth
+                        multiline
+                        maxRows={4}
+                        sx={{ mb: 1 }}
+                      />
+                      <TextField
+                        size="small"
+                        label="Etiquetas (coma separadas)"
+                        value={editCommentTags}
+                        onChange={(e) => setEditCommentTags(e.target.value)}
+                        fullWidth
+                        sx={{ mb: 1 }}
+                      />
+                      <Box display="flex" gap={1}>
+                        <IconButton size="small" color="primary" onClick={() => handleSaveEditComment(c.id)} disabled={!editCommentBody.trim()}>
+                          <Check fontSize="small" />
+                        </IconButton>
+                        <IconButton size="small" onClick={() => setEditingCommentId(null)}>
+                          <Close fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    </Box>
+                  ) : (
+                    <>
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{c.body}</Typography>
+                      {c.tags && c.tags.length > 0 && (
+                        <Box display="flex" flexWrap="wrap" gap={0.5} mt={0.5}>
+                          {c.tags.map((tag) => (
+                            <Chip key={tag} label={tag} size="small" variant="outlined" color="primary" sx={{ fontSize: '0.7rem' }} />
+                          ))}
+                        </Box>
+                      )}
+                    </>
+                  )}
 
                   {/* Reply count / toggle */}
                   {c.reply_count > 0 && (

@@ -61,8 +61,10 @@ Permitir búsquedas más ricas sobre productos y **guardar vistas** (combinacion
   - Vista por defecto se aplica automaticamente al entrar en la pantalla.
 - Tests: 11 tests en `test_saved_views.py` cubriendo CRUD de vistas, logica de default, y filtros avanzados (marca, categoria, rangos de fecha, has_i18n).
 
-**Fase 4 - Refinamientos posteriores: PENDIENTE**
-- Compartir vistas entre usuarios (vistas de equipo).
-- Vistas para otros recursos (medios, calidad, i18n, etc.).
-- Exportar/importar definiciones de vistas.
+**Fase 4 - Refinamientos posteriores: COMPLETADO**
+- Vistas compartidas: campo `is_public` en modelo. Los usuarios ven sus propias vistas + todas las públicas. Solo el propietario puede editar/eliminar.
+- Endpoints genéricos `/{resource}/*`: cualquier recurso (media, quality, i18n…) puede tener vistas guardadas sin añadir código nuevo.
+- Exportar/importar vistas: `GET /{resource}/{id}/export` devuelve `SavedViewExport` (sin user_id/id); `POST /{resource}/import` crea una copia en la cuenta del usuario.
+- Frontend: indicador de vista pública (icono globo), botón importar (archivo JSON), botón exportar en vista activa, switch "Vista pública" en el diálogo de guardar.
+- Tests: 23 tests en `test_saved_views.py` (11 previos + 12 nuevos de Fase 4).
 

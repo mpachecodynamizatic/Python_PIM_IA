@@ -58,14 +58,18 @@ Permitir **comentarios por SKU** para que equipos (marketing, ventas, IT) puedan
   - Contador de respuestas con boton expandir/colapsar que carga respuestas bajo demanda.
   - Respuestas mostradas con indentacion y borde izquierdo para jerarquia visual.
 
-**Fase 4 - Refinamientos posteriores: PENDIENTE**
-- Notificaciones por email al ser mencionado.
-- Edicion de comentarios.
-- Etiquetas/tags por comentario.
-- Filtros por autor o fecha en el listado de comentarios.
+**Fase 4 - Refinamientos posteriores: COMPLETADA**
+- Edición de comentarios: `PATCH /products/{sku}/comments/{id}` — solo el autor puede editar body y/o tags.
+- Etiquetas/tags: campo `tags` (JSON array) en modelo. Se pueden asignar al crear y modificar con PATCH.
+- Filtros en el listado: `GET /comments?author_id=&tag=&since=&until=` — filtra por autor, etiqueta y rango de fechas.
+- Frontend: campo de tags en formulario de nuevo comentario, chips de tags en cada comentario, botón editar inline (iconos Check/Close), panel de filtros colapsable con FilterList.
+- Tests: 24 tests en `test_comments.py` (13 previos + 11 nuevos de Fase 4).
 
-**Tests: 13 tests en `test_comments.py`**
+**Tests: 24 tests en `test_comments.py`**
 - CRUD basico: crear, listar, eliminar comentario.
 - Hilos: crear respuesta, listar respuestas, reply_count, parent inexistente 404, top-level excluye replies.
 - Permisos: editor no puede borrar comentario ajeno, admin puede borrar cualquiera.
 - Validacion: body vacio rechazado, producto inexistente 404.
+- Fase 4: editar propio comentario, 403 al editar ajeno, body vacío rechazado en edición, 404 al editar inexistente.
+- Tags: crear con tags, actualizar tags, vaciar tags.
+- Filtros: por autor (user_id), por tag, por since (ningún resultado si futuro), sin filtros devuelve todos.

@@ -222,3 +222,176 @@ async def test_comment_on_nonexistent_product_returns_404(client, auth_headers):
         f"{PRODUCTS_URL}/NONEXISTENT/comments", json={"body": "test"}, headers=auth_headers,
     )
     assert resp.status_code == 404
+
+
+# ── Fase 4: Edición de comentarios ─────────────────────────────────
+
+async def test_edit_own_comment_body(client, auth_headers):
+    sku = await _create_product(client, auth_headers)
+    create_resp = await client.post(
+        f"{PRODUCTS_URL}/{sku}/comments", json={"body": "Original"}, headers=auth_headers,
+    )
+    comment_id = create_resp.json()["id"]
+
+    patch_resp = await client.patch(
+        f"{PRODUCTS_URL}/{sku}/comments/{comment_id}",
+        json={"body": "Updated body"},
+        headers=auth_headers,
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["body"] == "Updated body"
+
+
+async def test_editor_cannot_edit_others_comment(client, auth_headers, db_session):
+    sku = await _create_product(client, auth_headers)
+    create_resp = await client.post(
+        f"{PRODUCTS_URL}/{sku}/comments", json={"body": "Admin comment"}, headers=auth_headers,
+    )
+    comment_id = create_resp.json()["id"]
+
+    _, editor_headers = await _create_editor(db_session)
+    resp = await client.patch(
+        f"{PRODUCTS_URL}/{sku}/comments/{comment_id}",
+        json={"body": "Hijacked"},
+        headers=editor_headers,
+    )
+    assert resp.status_code == 403
+
+
+async def test_edit_comment_empty_body_rejected(client, auth_headers):
+    sku = await _create_product(client, auth_headers)
+    create_resp = await client.post(
+        f"{PRODUCTS_URL}/{sku}/comments", json={"body": "Original"}, headers=auth_headers,
+    )
+    comment_id = create_resp.json()["id"]
+
+    resp = await client.patch(
+        f"{PRODUCTS_URL}/{sku}/comments/{comment_id}",
+        json={"body": "   "},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+async def test_edit_nonexistent_comment(client, auth_headers):
+    sku = await _create_product(client, auth_headers)
+    resp = await client.patch(
+        f"{PRODUCTS_URL}/{sku}/comments/{uuid.uuid4()}",
+        json={"body": "ghost"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+# ── Fase 4: Etiquetas/tags ──────────────────────────────────────────
+
+async def test_create_comment_with_tags(client, auth_headers):
+    sku = await _create_product(client, auth_headers)
+    resp = await client.post(
+        f"{PRODUCTS_URL}/{sku}/comments",
+        json={"body": "Tagged comment", "tags": ["pendiente revision", "aprobado"]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert set(data["tags"]) == {"pendiente revision", "aprobado"}
+
+
+async def test_update_comment_tags(client, auth_headers):
+    sku = await _create_product(client, auth_headers)
+    create_resp = await client.post(
+        f"{PRODUCTS_URL}/{sku}/comments",
+        json={"body": "Comment", "tags": ["old-tag"]},
+        headers=auth_headers,
+    )
+    comment_id = create_resp.json()["id"]
+
+    patch_resp = await client.patch(
+        f"{PRODUCTS_URL}/{sku}/comments/{comment_id}",
+        json={"tags": ["new-tag", "another"]},
+        headers=auth_headers,
+    )
+    assert patch_resp.status_code == 200
+    assert set(patch_resp.json()["tags"]) == {"new-tag", "another"}
+
+
+async def test_clear_comment_tags(client, auth_headers):
+    sku = await _create_product(client, auth_headers)
+    create_resp = await client.post(
+        f"{PRODUCTS_URL}/{sku}/comments",
+        json={"body": "Comment", "tags": ["some-tag"]},
+        headers=auth_headers,
+    )
+    comment_id = create_resp.json()["id"]
+
+    patch_resp = await client.patch(
+        f"{PRODUCTS_URL}/{sku}/comments/{comment_id}",
+        json={"tags": []},
+        headers=auth_headers,
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["tags"] == []
+
+
+# ── Fase 4: Filtros por autor y fecha ──────────────────────────────
+
+async def test_filter_comments_by_author(client, auth_headers, db_session):
+    sku = await _create_product(client, auth_headers, sku="FILT-001")
+    _, editor_headers = await _create_editor(db_session)
+
+    await client.post(f"{PRODUCTS_URL}/{sku}/comments", json={"body": "Admin comment"}, headers=auth_headers)
+    editor_create = await client.post(f"{PRODUCTS_URL}/{sku}/comments", json={"body": "Editor comment"}, headers=editor_headers)
+    editor_user_id = editor_create.json()["user_id"]
+
+    resp = await client.get(
+        f"{PRODUCTS_URL}/{sku}/comments?author_id={editor_user_id}", headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    comments = resp.json()
+    assert len(comments) == 1
+    assert comments[0]["body"] == "Editor comment"
+
+
+async def test_filter_comments_by_tag(client, auth_headers):
+    sku = await _create_product(client, auth_headers, sku="FILT-002")
+    await client.post(
+        f"{PRODUCTS_URL}/{sku}/comments",
+        json={"body": "Tagged", "tags": ["urgente"]},
+        headers=auth_headers,
+    )
+    await client.post(
+        f"{PRODUCTS_URL}/{sku}/comments",
+        json={"body": "Not tagged"},
+        headers=auth_headers,
+    )
+
+    resp = await client.get(f"{PRODUCTS_URL}/{sku}/comments?tag=urgente", headers=auth_headers)
+    assert resp.status_code == 200
+    comments = resp.json()
+    assert len(comments) == 1
+    assert comments[0]["body"] == "Tagged"
+
+
+async def test_filter_comments_by_since(client, auth_headers):
+    sku = await _create_product(client, auth_headers, sku="FILT-003")
+    await client.post(f"{PRODUCTS_URL}/{sku}/comments", json={"body": "Old"}, headers=auth_headers)
+
+    from datetime import datetime, timezone
+    future = datetime.now(timezone.utc).isoformat()
+
+    # All existing comments are before `future`
+    resp = await client.get(
+        f"{PRODUCTS_URL}/{sku}/comments?since={future}", headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()) == 0
+
+
+async def test_filter_returns_all_without_filters(client, auth_headers):
+    sku = await _create_product(client, auth_headers, sku="FILT-004")
+    for i in range(3):
+        await client.post(f"{PRODUCTS_URL}/{sku}/comments", json={"body": f"comment {i}"}, headers=auth_headers)
+
+    resp = await client.get(f"{PRODUCTS_URL}/{sku}/comments", headers=auth_headers)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 3

@@ -4,8 +4,8 @@ Resumen consolidado de todas las fases y funcionalidades pendientes de implement
 
 > Generado: Marzo 2026
 > Total de planes: 7
-> Planes completados al 100%: 5 (01, 02, 03, 04, 05)
-> Planes con fases pendientes: 2 (06, 07)
+> Planes completados al 100%: 7 (01, 02, 03, 04, 05, 06, 07)
+> Planes con fases pendientes: 0
 
 ---
 
@@ -71,53 +71,31 @@ Todas las fases implementadas:
 
 ## 06 - Busqueda avanzada y vistas guardadas
 
-**Estado: Fase 4 PENDIENTE**
+**Estado: COMPLETADO**
 
-Fases 1-3 completadas (modelo SavedView, filtros avanzados, frontend con vistas guardadas y filtros).
-
-### Pendiente: Fase 4 - Refinamientos posteriores
-
-| # | Funcionalidad | Descripcion | Prioridad |
-|---|---------------|-------------|-----------|
-| 1 | Vistas compartidas | Compartir vistas entre usuarios (vistas de equipo con visibilidad publica/privada) | Media |
-| 2 | Vistas para otros recursos | Extender el sistema de vistas a media, calidad, i18n y otros listados | Baja |
-| 3 | Exportar/importar vistas | Permitir exportar definiciones de vistas como JSON e importarlas en otro entorno | Baja |
+Todas las fases implementadas:
+- Fase 1: Modelo SavedView, filtros avanzados en API (brand, category, date, has_i18n)
+- Fase 2: Endpoint de busqueda unificado con paginacion y ordenacion
+- Fase 3: Frontend con vistas guardadas, chips de vistas, filtros avanzados
+- Fase 4: Vistas compartidas (is_public), endpoints genericos /{resource}, exportar/importar vistas JSON (23 tests)
 
 ---
 
 ## 07 - Colaboracion y comentarios
 
-**Estado: Fase 4 PENDIENTE**
+**Estado: COMPLETADO**
 
-Fases 1-3 completadas (modelo ProductComment, hilos con parent_id, frontend con pestana de comentarios y respuestas).
-
-### Pendiente: Fase 4 - Refinamientos posteriores
-
-| # | Funcionalidad | Descripcion | Prioridad |
-|---|---------------|-------------|-----------|
-| 1 | Notificaciones por email | Enviar email cuando un usuario es mencionado en un comentario (@usuario) | Alta |
-| 2 | Edicion de comentarios | Permitir editar el cuerpo de un comentario existente (solo autor) | Media |
-| 3 | Etiquetas/tags | Anadir tags a los comentarios (ej. "pendiente revision", "aprobado", "urgente") | Baja |
-| 4 | Filtros de comentarios | Filtrar comentarios por autor o rango de fecha en el listado | Baja |
+Todas las fases implementadas:
+- Fase 1: Modelo ProductComment, endpoints REST (listar, crear, eliminar)
+- Fase 2: Hilos con parent_id, reply_count, GET /replies
+- Fase 3: Frontend con pestaña Comentarios, hilos expandibles, formulario de nuevo comentario
+- Fase 4: Edición de comentarios (PATCH, solo autor), etiquetas/tags (JSON array), filtros por autor/tag/fecha, frontend con edit inline + chips de tags + panel de filtros (24 tests)
 
 ---
 
 ## Resumen global de pendientes
 
-### Por prioridad
-
-**Alta:**
-- Notificaciones por email al ser mencionado en comentarios
-
-**Media:**
-- Vistas compartidas entre usuarios (equipo)
-- Edicion de comentarios
-
-**Baja:**
-- Vistas para otros recursos (media, calidad, i18n)
-- Exportar/importar definiciones de vistas
-- Etiquetas/tags en comentarios
-- Filtros de comentarios por autor/fecha
+Todos los planes (01-07) han sido completados al 100%. No hay funcionalidades pendientes.
 
 ### Estadisticas
 

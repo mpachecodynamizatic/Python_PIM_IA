@@ -136,7 +136,9 @@ export interface VersionComment {
   version_id: string | null;
   parent_id: string | null;
   reply_count: number;
+  tags: string[] | null;
   created_at: string;
+  updated_at: string | null;
 }
 
 export async function getVersionComments(
@@ -157,13 +159,29 @@ export async function createVersionComment(
 }
 
 // Product-level comments
-export async function getProductComments(sku: string): Promise<VersionComment[]> {
-  const response = await client.get<VersionComment[]>(`/products/${sku}/comments`);
+export interface CommentFilters {
+  author_id?: string;
+  tag?: string;
+  since?: string;
+  until?: string;
+}
+
+export async function getProductComments(sku: string, filters?: CommentFilters): Promise<VersionComment[]> {
+  const response = await client.get<VersionComment[]>(`/products/${sku}/comments`, { params: filters });
   return response.data;
 }
 
-export async function createProductComment(sku: string, body: string, parentId?: string): Promise<VersionComment> {
-  const response = await client.post<VersionComment>(`/products/${sku}/comments`, { body, parent_id: parentId });
+export async function createProductComment(sku: string, body: string, parentId?: string, tags?: string[]): Promise<VersionComment> {
+  const response = await client.post<VersionComment>(`/products/${sku}/comments`, { body, parent_id: parentId, tags });
+  return response.data;
+}
+
+export async function updateProductComment(
+  sku: string,
+  commentId: string,
+  data: { body?: string; tags?: string[] },
+): Promise<VersionComment> {
+  const response = await client.patch<VersionComment>(`/products/${sku}/comments/${commentId}`, data);
   return response.data;
 }
 

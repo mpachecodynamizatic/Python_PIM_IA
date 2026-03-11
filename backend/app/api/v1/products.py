@@ -18,7 +18,7 @@ from app.schemas.product import (
     RetentionPolicy,
     RetentionResult,
 )
-from app.schemas.product_comment import ProductCommentCreate, ProductCommentRead
+from app.schemas.product_comment import ProductCommentCreate, ProductCommentRead, ProductCommentUpdate
 from app.services import product_service
 from app.services import product_comment_service
 
@@ -181,11 +181,20 @@ async def get_versions(
 @router.get("/{sku}/comments", response_model=list[ProductCommentRead])
 async def list_product_comments(
     sku: str,
+    author_id: str | None = Query(None, description="Filter by author user_id"),
+    tag: str | None = Query(None, description="Filter by tag label"),
+    since: str | None = Query(None, description="ISO datetime lower bound for created_at"),
+    until: str | None = Query(None, description="ISO datetime upper bound for created_at"),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    """Lista comentarios del producto."""
-    return await product_comment_service.list_comments(db, sku)
+    """Lista comentarios del producto con filtros opcionales."""
+    from datetime import datetime
+    since_dt = datetime.fromisoformat(since.replace(' ', '+')) if since else None
+    until_dt = datetime.fromisoformat(until.replace(' ', '+')) if until else None
+    return await product_comment_service.list_comments(
+        db, sku, author_id=author_id, tag=tag, since=since_dt, until=until_dt
+    )
 
 
 @router.post("/{sku}/comments", response_model=ProductCommentRead, status_code=201)
@@ -224,6 +233,22 @@ async def delete_product_comment(
         db, sku, comment_id, str(user.id), is_admin=(user.role == "admin")
     )
     await db.commit()
+
+
+@router.patch("/{sku}/comments/{comment_id}", response_model=ProductCommentRead)
+async def update_product_comment(
+    sku: str,
+    comment_id: str,
+    body: ProductCommentUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Edita el cuerpo o las etiquetas de un comentario (solo autor)."""
+    comment = await product_comment_service.update_comment(
+        db, sku, comment_id, str(user.id), body
+    )
+    await db.commit()
+    return comment
 
 
 @router.post("/{sku}/versions/{version_id}/restore", response_model=ProductRead)

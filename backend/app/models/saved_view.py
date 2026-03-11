@@ -18,4 +18,5 @@ class SavedView(UUIDMixin, TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     filters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

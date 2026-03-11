@@ -40,17 +40,22 @@ import {
   Delete,
   ExpandMore,
   FilterList,
+  Public,
   Save,
   Star,
   StarBorder,
+  Upload,
 } from '@mui/icons-material';
 import { listProducts, createProduct } from '../../api/products';
 import type { ProductFilters } from '../../api/products';
 import { listCategories } from '../../api/categories';
-import { listProductViews, createProductView, deleteProductView, updateProductView } from '../../api/views';
+import {
+  listProductViews, createProductView, deleteProductView, updateProductView,
+  exportProductView, importProductView,
+} from '../../api/views';
 import type { ProductListItem } from '../../types/product';
 import type { Category } from '../../types/category';
-import type { SavedView } from '../../types/savedView';
+import type { SavedView, SavedViewExport } from '../../types/savedView';
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Borrador',
@@ -140,6 +145,7 @@ export default function ProductList() {
   const [viewName, setViewName] = useState('');
   const [viewDesc, setViewDesc] = useState('');
   const [viewDefault, setViewDefault] = useState(false);
+  const [viewPublic, setViewPublic] = useState(false);
 
   const updateFilter = (key: keyof Filters, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -214,12 +220,40 @@ export default function ProductList() {
       description: viewDesc.trim() || null,
       filters: activeFilters,
       is_default: viewDefault,
+      is_public: viewPublic,
     });
     setSaveDialogOpen(false);
     setViewName('');
     setViewDesc('');
     setViewDefault(false);
+    setViewPublic(false);
     loadViews();
+  };
+
+  const handleExportView = async (view: SavedView) => {
+    try {
+      const exported = await exportProductView(view.id);
+      const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vista-${view.name.replace(/\s+/g, '-').toLowerCase()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Silently ignore export errors
+    }
+  };
+
+  const handleImportView = async (file: File) => {
+    try {
+      const text = await file.text();
+      const data: SavedViewExport = JSON.parse(text);
+      await importProductView(data);
+      loadViews();
+    } catch {
+      // Silently ignore parse/import errors
+    }
   };
 
   const handleDeleteView = async (viewId: string) => {
@@ -264,7 +298,12 @@ export default function ProductList() {
           {savedViews.map((view) => (
             <Chip
               key={view.id}
-              label={view.name}
+              label={
+                <Box component="span" display="flex" alignItems="center" gap={0.5}>
+                  {view.is_public && <Public sx={{ fontSize: 12 }} />}
+                  {view.name}
+                </Box>
+              }
               size="small"
               color={activeViewId === view.id ? 'primary' : 'default'}
               variant={activeViewId === view.id ? 'filled' : 'outlined'}
@@ -274,6 +313,43 @@ export default function ProductList() {
               deleteIcon={<Delete fontSize="small" />}
             />
           ))}
+          <Tooltip title="Importar vista desde archivo JSON">
+            <IconButton
+              size="small"
+              component="label"
+            >
+              <Upload fontSize="small" />
+              <input
+                type="file"
+                accept=".json"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImportView(file);
+                  e.target.value = '';
+                }}
+              />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      )}
+      {savedViews.length === 0 && (
+        <Box display="flex" gap={1} mb={2} alignItems="center">
+          <Tooltip title="Importar vista desde archivo JSON">
+            <IconButton size="small" component="label">
+              <Upload fontSize="small" />
+              <input
+                type="file"
+                accept=".json"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImportView(file);
+                  e.target.value = '';
+                }}
+              />
+            </IconButton>
+          </Tooltip>
         </Box>
       )}
 
@@ -329,6 +405,19 @@ export default function ProductList() {
                 <Save fontSize="small" />
               </IconButton>
             </Tooltip>
+            {activeViewId && (
+              <Tooltip title="Exportar vista activa como JSON">
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    const view = savedViews.find((v) => v.id === activeViewId);
+                    if (view) handleExportView(view);
+                  }}
+                >
+                  <StarBorder fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title="Limpiar filtros">
               <IconButton size="small" onClick={clearFilters}>
                 <Clear fontSize="small" />
@@ -537,6 +626,10 @@ export default function ProductList() {
             <FormControlLabel
               control={<Switch checked={viewDefault} onChange={(e) => setViewDefault(e.target.checked)} />}
               label="Vista por defecto (se aplica al entrar)"
+            />
+            <FormControlLabel
+              control={<Switch checked={viewPublic} onChange={(e) => setViewPublic(e.target.checked)} />}
+              label="Vista pública (visible para todos los usuarios)"
             />
             <Typography variant="body2" color="text.secondary">
               Filtros activos: {Object.entries(filters).filter(([, v]) => v !== '').map(([k]) => k).join(', ') || 'ninguno'}

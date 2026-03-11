@@ -30,3 +30,4 @@ class ProductComment(UUIDMixin, TimestampMixin, Base):
     )
     body: Mapped[str] = mapped_column(Text, nullable=False)
     mentions: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # e.g. {"user_ids": ["..."]}
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)  # e.g. ["pendiente revision", "aprobado"]
