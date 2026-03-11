@@ -31,8 +31,8 @@ import {
   MenuItem,
   Switch,
 } from '@mui/material';
-import { ArrowBack, Delete, Link, UploadFile, ExpandMore, ExpandLess, CompareArrows, Comment, Send } from '@mui/icons-material';
-import { getProduct, updateProduct, transitionProduct, getProductVersions, restoreProductVersion, getVersionComments, createVersionComment, submitForReview, approveProduct, rejectProduct } from '../../api/products';
+import { ArrowBack, Delete, Link, UploadFile, ExpandMore, ExpandLess, CompareArrows, Comment, Send, Reply } from '@mui/icons-material';
+import { getProduct, updateProduct, transitionProduct, getProductVersions, restoreProductVersion, getVersionComments, createVersionComment, getProductComments, createProductComment, deleteProductComment, getCommentReplies, submitForReview, approveProduct, rejectProduct } from '../../api/products';
 import type { VersionComment } from '../../api/products';
 import { listMedia, uploadMedia, deleteMedia } from '../../api/media';
 import { getProductTranslations, upsertTranslation, deleteTranslation } from '../../api/i18n';
@@ -99,6 +99,19 @@ export default function ProductDetail() {
   const [versionComments, setVersionComments] = useState<Record<string, VersionComment[]>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [showCommentsFor, setShowCommentsFor] = useState<string | null>(null);
+  // Product-level comments
+  const [productComments, setProductComments] = useState<VersionComment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  // Threaded replies
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [replies, setReplies] = useState<Record<string, VersionComment[]>>({});
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+
+  const refreshProductComments = useCallback(async () => {
+    if (!sku) return;
+    setProductComments(await getProductComments(sku).catch(() => []));
+  }, [sku]);
 
   const refreshMedia = useCallback(async () => {
     if (!sku) return;
@@ -160,8 +173,9 @@ export default function ProductDetail() {
       getProductVersions(sku).catch(() => []),
       listCategories().catch(() => []),
       listFamilies().catch(() => []),
+      getProductComments(sku).catch(() => []),
     ])
-      .then(async ([p, m, t, q, v, cats, fams]) => {
+      .then(async ([p, m, t, q, v, cats, fams, comments]) => {
         setProduct(p);
         setEditBrand(p.brand);
         setEditCategoryId(p.category_id);
@@ -173,6 +187,7 @@ export default function ProductDetail() {
         setVersions(v);
         setCategories(cats);
         setFamilies(fams);
+        setProductComments(comments);
         setEditFamilyId(p.family_id || null);
         setStructuredAttrs(p.attributes || {});
         // Load definitions if product has a family
@@ -447,6 +462,58 @@ export default function ProductDetail() {
     }
   };
 
+  const handleSubmitProductComment = async () => {
+    if (!sku) return;
+    const body = newComment.trim();
+    if (!body) return;
+    try {
+      await createProductComment(sku, body);
+      setNewComment('');
+      await refreshProductComments();
+    } catch {
+      setErrMsg('Error al añadir comentario');
+    }
+  };
+
+  const handleSubmitReply = async (parentId: string) => {
+    if (!sku) return;
+    const body = replyText.trim();
+    if (!body) return;
+    try {
+      await createProductComment(sku, body, parentId);
+      setReplyText('');
+      setReplyingTo(null);
+      await refreshProductComments();
+      const freshReplies = await getCommentReplies(sku, parentId);
+      setReplies((prev) => ({ ...prev, [parentId]: freshReplies }));
+      setExpandedReplies((prev) => new Set(prev).add(parentId));
+    } catch {
+      setErrMsg('Error al añadir respuesta');
+    }
+  };
+
+  const handleToggleReplies = async (commentId: string) => {
+    if (!sku) return;
+    if (expandedReplies.has(commentId)) {
+      setExpandedReplies((prev) => { const n = new Set(prev); n.delete(commentId); return n; });
+    } else {
+      const data = await getCommentReplies(sku, commentId).catch(() => []);
+      setReplies((prev) => ({ ...prev, [commentId]: data }));
+      setExpandedReplies((prev) => new Set(prev).add(commentId));
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!sku) return;
+    try {
+      await deleteProductComment(sku, commentId);
+      await refreshProductComments();
+      setMessage('Comentario eliminado');
+    } catch {
+      setErrMsg('Error al eliminar comentario');
+    }
+  };
+
   return (
     <Box>
       <Button startIcon={<ArrowBack />} onClick={() => navigate('/products')} sx={{ mb: 2 }}>
@@ -535,6 +602,7 @@ export default function ProductDetail() {
           <Tab label="SEO" />
           <Tab label={`Media (${media.length})`} />
           <Tab label="Calidad" />
+          <Tab label={`Comentarios (${productComments.length})`} />
           <Tab label="Historial" />
         </Tabs>
       </Paper>
@@ -834,6 +902,138 @@ export default function ProductDetail() {
       )}
 
       {tab === 6 && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>Comentarios</Typography>
+          <Typography variant="body2" color="text.secondary" mb={2}>
+            Discusion general sobre este producto entre los miembros del equipo.
+          </Typography>
+
+          {/* Input nuevo comentario */}
+          <Box display="flex" gap={1} mb={3}>
+            <TextField
+              size="small"
+              placeholder="Escribe un comentario..."
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              fullWidth
+              multiline
+              maxRows={4}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmitProductComment();
+                }
+              }}
+            />
+            <IconButton
+              color="primary"
+              onClick={handleSubmitProductComment}
+              disabled={!newComment.trim()}
+            >
+              <Send />
+            </IconButton>
+          </Box>
+
+          {productComments.length === 0 ? (
+            <Typography color="text.secondary" textAlign="center" py={4}>
+              Sin comentarios. Se el primero en comentar.
+            </Typography>
+          ) : (
+            <Box>
+              {productComments.map((c) => (
+                <Box
+                  key={c.id}
+                  sx={{ mb: 2, p: 2, border: '1px solid #eee', borderRadius: 1 }}
+                >
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
+                    <Typography variant="subtitle2">
+                      {c.author_name}
+                      <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                        {new Date(c.created_at).toLocaleString()}
+                      </Typography>
+                    </Typography>
+                    <Box>
+                      <Tooltip title="Responder">
+                        <IconButton size="small" onClick={() => { setReplyingTo(replyingTo === c.id ? null : c.id); setReplyText(''); }}>
+                          <Reply fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Eliminar comentario">
+                        <IconButton size="small" onClick={() => handleDeleteComment(c.id)}>
+                          <Delete fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  </Box>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{c.body}</Typography>
+
+                  {/* Reply count / toggle */}
+                  {c.reply_count > 0 && (
+                    <Button
+                      size="small"
+                      sx={{ mt: 1, textTransform: 'none' }}
+                      startIcon={expandedReplies.has(c.id) ? <ExpandLess /> : <ExpandMore />}
+                      onClick={() => handleToggleReplies(c.id)}
+                    >
+                      {expandedReplies.has(c.id) ? 'Ocultar' : 'Ver'} {c.reply_count} {c.reply_count === 1 ? 'respuesta' : 'respuestas'}
+                    </Button>
+                  )}
+
+                  {/* Reply input */}
+                  {replyingTo === c.id && (
+                    <Box display="flex" gap={1} mt={1} ml={2}>
+                      <TextField
+                        size="small"
+                        placeholder="Escribe una respuesta..."
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        fullWidth
+                        multiline
+                        maxRows={3}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSubmitReply(c.id);
+                          }
+                        }}
+                      />
+                      <IconButton color="primary" onClick={() => handleSubmitReply(c.id)} disabled={!replyText.trim()}>
+                        <Send />
+                      </IconButton>
+                    </Box>
+                  )}
+
+                  {/* Replies list */}
+                  <Collapse in={expandedReplies.has(c.id)}>
+                    <Box ml={3} mt={1} borderLeft="2px solid #e0e0e0" pl={2}>
+                      {(replies[c.id] || []).map((r) => (
+                        <Box key={r.id} sx={{ mb: 1, p: 1 }}>
+                          <Box display="flex" justifyContent="space-between" alignItems="center">
+                            <Typography variant="subtitle2" fontSize="0.8rem">
+                              {r.author_name}
+                              <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                                {new Date(r.created_at).toLocaleString()}
+                              </Typography>
+                            </Typography>
+                            <Tooltip title="Eliminar respuesta">
+                              <IconButton size="small" onClick={() => handleDeleteComment(r.id)}>
+                                <Delete fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                          <Typography variant="body2" fontSize="0.85rem" sx={{ whiteSpace: 'pre-wrap' }}>{r.body}</Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Collapse>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Paper>
+      )}
+
+      {tab === 7 && (
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>
             Historial de versiones

@@ -134,6 +134,8 @@ export interface VersionComment {
   author_name: string;
   body: string;
   version_id: string | null;
+  parent_id: string | null;
+  reply_count: number;
   created_at: string;
 }
 
@@ -152,4 +154,24 @@ export async function createVersionComment(
 ): Promise<VersionComment> {
   const response = await client.post<VersionComment>(`/products/${sku}/versions/${versionId}/comments`, { body });
   return response.data;
+}
+
+// Product-level comments
+export async function getProductComments(sku: string): Promise<VersionComment[]> {
+  const response = await client.get<VersionComment[]>(`/products/${sku}/comments`);
+  return response.data;
+}
+
+export async function createProductComment(sku: string, body: string, parentId?: string): Promise<VersionComment> {
+  const response = await client.post<VersionComment>(`/products/${sku}/comments`, { body, parent_id: parentId });
+  return response.data;
+}
+
+export async function getCommentReplies(sku: string, commentId: string): Promise<VersionComment[]> {
+  const response = await client.get<VersionComment[]>(`/products/${sku}/comments/${commentId}/replies`);
+  return response.data;
+}
+
+export async function deleteProductComment(sku: string, commentId: string): Promise<void> {
+  await client.delete(`/products/${sku}/comments/${commentId}`);
 }

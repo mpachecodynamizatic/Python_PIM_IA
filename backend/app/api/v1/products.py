@@ -201,6 +201,17 @@ async def create_product_comment(
     return comment
 
 
+@router.get("/{sku}/comments/{comment_id}/replies", response_model=list[ProductCommentRead])
+async def list_comment_replies(
+    sku: str,
+    comment_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Lista respuestas a un comentario."""
+    return await product_comment_service.get_replies(db, sku, comment_id)
+
+
 @router.delete("/{sku}/comments/{comment_id}", status_code=204)
 async def delete_product_comment(
     sku: str,
