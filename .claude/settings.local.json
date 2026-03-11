@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(.venvScriptspython.exe -m pip install openpyxl -q)",
+      "Bash(python -m pip install:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python:*)",
+      "Bash(.venvScriptspython.exe -m pytest tests/test_quality.py tests/test_i18n.py tests/test_media.py -v --tb=short)",
+      "Bash(cmd /c:*)",
+      "Bash(c:UsersmpachecoDocumentsGITHUBPYTHONPython_PIM_IAbackend.venvScriptspython.exe -m pytest c:UsersmpachecoDocumentsGITHUBPYTHONPython_PIM_IAbackendteststest_quality.py c:UsersmpachecoDocumentsGITHUBPYTHONPython_PIM_IAbackendteststest_i18n.py c:UsersmpachecoDocumentsGITHUBPYTHONPython_PIM_IAbackendteststest_media.py -v --tb=short)",
+      "Bash(powershell.exe -Command \"& ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\.venv\\\\Scripts\\\\python.exe'' -m pytest ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\test_quality.py'' ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\test_i18n.py'' ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\test_media.py'' -v --tb=short 2>&1\")",
+      "Bash(powershell.exe -Command \"& ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\.venv\\\\Scripts\\\\python.exe'' -m pytest ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\'' -v --tb=short 2>&1\")",
+      "Bash(powershell.exe -Command \"& ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\.venv\\\\Scripts\\\\python.exe'' -m pytest ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\'' -v --tb=short --ignore=''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\test_ingest.py'' 2>&1\")",
+      "Bash(c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\.venv\\\\Scripts\\\\python.exe -m pytest:*)",
+      "Bash(cmd.exe /c \"c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\.venv\\\\Scripts\\\\python.exe -m pytest:*)",
+      "Bash(powershell.exe -Command \"& ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\.venv\\\\Scripts\\\\python.exe'' -m pytest ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\test_auth.py::test_me_unauthenticated'' ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\test_products.py::test_update_product'' ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\test_products.py::test_transition_product'' ''c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\tests\\\\test_categories.py::test_get_category'' -v --tb=long 2>&1\")",
+      "Bash(c:UsersmpachecoDocumentsGITHUBPYTHONPython_PIM_IAbackend.venvScriptspython.exe -m pytest c:UsersmpachecoDocumentsGITHUBPYTHONPython_PIM_IAbackendtests -v --tb=short --ignore=c:UsersmpachecoDocumentsGITHUBPYTHONPython_PIM_IAbackendteststest_ingest.py)",
+      "Bash(c:\\\\Users\\\\mpacheco\\\\Documents\\\\GITHUB\\\\PYTHON\\\\Python_PIM_IA\\\\backend\\\\.venv\\\\Scripts\\\\python.exe:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Bash(pkill:*)",
+      "Bash(timeout 8 npx vite build:*)",
+      "Bash(node -e:*)",
+      "Bash(.venv/Scripts/python -m pytest:*)",
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python:*)",
+      "Bash(ls:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python -m pytest:*)"
+    ]
+  }
+}
