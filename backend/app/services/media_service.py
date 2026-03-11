@@ -34,6 +34,8 @@ async def upload_media(
     file: UploadFile,
     sku: str | None,
     kind: str,
+    media_type: str = "other",
+    sort_order: int = 0,
 ) -> MediaAsset:
     content_type = file.content_type or ""
     if content_type not in ALLOWED_CONTENT_TYPES:
@@ -52,6 +54,8 @@ async def upload_media(
     asset = MediaAsset(
         sku=sku,
         kind=kind,
+        media_type=media_type,
+        sort_order=sort_order,
         url=f"/uploads/{stored_name}",
         filename=file.filename,
         metadata_extra={"content_type": content_type, "stored_as": stored_name},
@@ -65,12 +69,15 @@ async def list_media(
     db: AsyncSession,
     sku: str | None = None,
     kind: str | None = None,
+    media_type: str | None = None,
 ) -> list[MediaAsset]:
-    query = select(MediaAsset).order_by(MediaAsset.created_at.desc())
+    query = select(MediaAsset).order_by(MediaAsset.sort_order, MediaAsset.created_at.desc())
     if sku:
         query = query.where(MediaAsset.sku == sku)
     if kind:
         query = query.where(MediaAsset.kind == kind)
+    if media_type:
+        query = query.where(MediaAsset.media_type == media_type)
     result = await db.execute(query)
     return list(result.scalars().all())
 
@@ -80,6 +87,19 @@ async def get_media_asset(db: AsyncSession, media_id: str) -> MediaAsset:
     asset = result.scalar_one_or_none()
     if asset is None:
         raise HTTPException(status_code=404, detail="Media asset not found")
+    return asset
+
+
+async def update_media_asset(db: AsyncSession, media_id: str, data) -> MediaAsset:
+    from app.schemas.media import MediaUpdate
+    asset = await get_media_asset(db, media_id)
+    update_data = data.model_dump(exclude_unset=True)
+    # metadata field maps to metadata_extra in the model
+    if "metadata" in update_data:
+        asset.metadata_extra = update_data.pop("metadata")
+    for field, value in update_data.items():
+        setattr(asset, field, value)
+    await db.flush()
     return asset
 
 

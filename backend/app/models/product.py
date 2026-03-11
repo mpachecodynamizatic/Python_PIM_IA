@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -30,6 +30,18 @@ class Product(Base):
         nullable=True,
         index=True,
     )
+    # Identity / codes
+    ean_gtin: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    dun14: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    supplier_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Naming / descriptions
+    name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    short_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    long_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    key_benefits: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
+    sales_pitch: Mapped[str | None] = mapped_column(Text, nullable=True)
+    marketing_claims: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
+    marketplace_text: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
     seo: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
     attributes: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(

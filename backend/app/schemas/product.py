@@ -9,6 +9,18 @@ class ProductCreate(BaseModel):
     category_id: str
     family_id: str | None = None
     status: str = "draft"
+    # Identity
+    ean_gtin: str | None = None
+    dun14: str | None = None
+    supplier_ref: str | None = None
+    # Naming / descriptions
+    name: str | None = None
+    short_description: str | None = None
+    long_description: str | None = None
+    key_benefits: list = []
+    sales_pitch: str | None = None
+    marketing_claims: list = []
+    marketplace_text: dict = {}
     seo: dict = {}
     attributes: dict = {}
 
@@ -17,6 +29,18 @@ class ProductUpdate(BaseModel):
     brand: str | None = None
     category_id: str | None = None
     family_id: str | None = None
+    # Identity
+    ean_gtin: str | None = None
+    dun14: str | None = None
+    supplier_ref: str | None = None
+    # Naming / descriptions
+    name: str | None = None
+    short_description: str | None = None
+    long_description: str | None = None
+    key_benefits: list | None = None
+    sales_pitch: str | None = None
+    marketing_claims: list | None = None
+    marketplace_text: dict | None = None
     seo: dict | None = None
     attributes: dict | None = None
 
@@ -41,6 +65,18 @@ class ProductRead(BaseModel):
     status: str
     category_id: str
     family_id: str | None = None
+    # Identity
+    ean_gtin: str | None = None
+    dun14: str | None = None
+    supplier_ref: str | None = None
+    # Naming / descriptions
+    name: str | None = None
+    short_description: str | None = None
+    long_description: str | None = None
+    key_benefits: list = []
+    sales_pitch: str | None = None
+    marketing_claims: list = []
+    marketplace_text: dict = {}
     seo: dict
     attributes: dict
     created_at: datetime
@@ -55,6 +91,8 @@ class ProductListItem(BaseModel):
     brand: str
     status: str
     category_id: str
+    name: str | None = None
+    ean_gtin: str | None = None
     updated_at: datetime
 
     model_config = {"from_attributes": True}

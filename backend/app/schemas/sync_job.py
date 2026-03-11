@@ -10,7 +10,10 @@ class SyncJobFilters(BaseModel):
 
 
 class SyncJobCreate(BaseModel):
-    channel: str
+    channel_id: str
+    # Optional overrides — if omitted, values are inherited from the channel
+    connection_type: str | None = None
+    connection_config: dict | None = None
     filters: SyncJobFilters = SyncJobFilters()
     max_retries: int = 3
     cron_expression: str | None = None
@@ -18,7 +21,11 @@ class SyncJobCreate(BaseModel):
 
 class SyncJobRead(BaseModel):
     id: str
-    channel: str
+    channel_id: str
+    channel_code: str
+    channel_name: str
+    connection_type: str | None = None
+    connection_config: dict = {}
     status: str
     filters: dict = {}
     started_at: datetime | None = None

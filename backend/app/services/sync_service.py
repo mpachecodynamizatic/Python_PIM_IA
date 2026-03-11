@@ -6,7 +6,8 @@ from croniter import croniter
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connectors import get_connector, list_channels
+from app.connectors.csv_connector import CsvConnector
+from app.connectors.http_connector import HttpConnector
 from app.models.product_sync_history import ProductSyncHistory
 from app.models.sync_job import SyncJob
 from app.schemas.common import PaginatedResponse
@@ -59,23 +60,40 @@ def _compute_next_run(cron_expression: str) -> datetime | None:
         return None
 
 
+def _get_connector_for_type(connection_type: str | None):
+    """Selects connector implementation based on connection_type.
+    ftp / ssh  → CsvConnector (file-based transport)
+    http_post / None → HttpConnector (HTTP-based transport)
+    """
+    if connection_type in ("ftp", "ssh"):
+        return CsvConnector()
+    return HttpConnector()
+
+
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------
 async def create_sync_job(db: AsyncSession, data: SyncJobCreate) -> SyncJob:
-    if data.channel not in list_channels():
-        from fastapi import HTTPException
+    from fastapi import HTTPException
+    from app.services.channel_service import get_channel
 
-        raise HTTPException(
-            status_code=400,
-            detail=f"Canal no soportado: {data.channel}. Disponibles: {list_channels()}",
-        )
+    channel = await get_channel(db, data.channel_id)  # raises 404 if not found
+    if not channel.active:
+        raise HTTPException(status_code=400, detail="El canal no está activo")
+
+    # Inherit connection from channel; override if explicitly supplied
+    connection_type = data.connection_type if data.connection_type is not None else channel.connection_type
+    connection_config = data.connection_config if data.connection_config is not None else (channel.connection_config or {})
 
     scheduled = bool(data.cron_expression)
     next_run = _compute_next_run(data.cron_expression) if data.cron_expression else None
 
     job = SyncJob(
-        channel=data.channel,
+        channel_id=channel.id,
+        channel_code=channel.code,
+        channel_name=channel.name,
+        connection_type=connection_type,
+        connection_config=connection_config,
         status="queued",
         filters=data.filters.model_dump(exclude_none=True),
         metrics={},
@@ -108,7 +126,7 @@ async def list_sync_jobs(
 ) -> PaginatedResponse[SyncJobRead]:
     query = select(SyncJob)
     if channel:
-        query = query.where(SyncJob.channel == channel)
+        query = query.where(SyncJob.channel_id == channel)
     if status:
         query = query.where(SyncJob.status == status)
 
@@ -154,7 +172,7 @@ async def run_sync_job(job_id: str) -> None:
         if not job:
             return
 
-        sem = _get_channel_semaphore(job.channel)
+        sem = _get_channel_semaphore(job.channel_id)
 
         async with sem:
             job.status = "running"
@@ -162,7 +180,7 @@ async def run_sync_job(job_id: str) -> None:
             await db.commit()
 
             try:
-                connector = get_connector(job.channel)
+                connector = _get_connector_for_type(job.connection_type)
                 conn_result = await connector.run(db, job.filters)
 
                 job.metrics = conn_result.to_metrics()
@@ -173,7 +191,7 @@ async def run_sync_job(job_id: str) -> None:
                 for detail in conn_result.product_details:
                     history = ProductSyncHistory(
                         sku=detail.sku,
-                        channel=job.channel,
+                        channel=job.channel_code,
                         job_id=str(job.id),
                         status=detail.status,
                         detail={},

@@ -1,23 +1,25 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connectors import list_channels
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
+from app.schemas.product_channel import ChannelRead
 from app.schemas.product_sync_history import ProductSyncHistoryRead, ProductSyncStatusRead
 from app.schemas.sync_job import SyncJobCreate, SyncJobRead, SyncScheduleUpdate
-from app.services import sync_service
+from app.services import sync_service, channel_service
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 
-@router.get("/channels", response_model=list[str])
+@router.get("/channels", response_model=list[ChannelRead])
 async def get_available_channels(
+    db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    return list_channels()
+    """Devuelve el catálogo de canales activos disponibles para sincronización."""
+    return await channel_service.list_channels(db, active_only=True)
 
 
 @router.post("/jobs", response_model=SyncJobRead, status_code=201)

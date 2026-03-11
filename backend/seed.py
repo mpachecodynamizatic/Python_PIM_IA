@@ -22,10 +22,17 @@ from app.core.config import settings
 from app.models.audit import AuditLog
 from app.models.attribute_family import AttributeFamily  # noqa: F401
 from app.models.base import Base
+from app.models.brand import Brand
 from app.models.category import Category
+from app.models.external_taxonomy import ExternalTaxonomy, ProductExternalTaxonomy
 from app.models.media import MediaAsset
 from app.models.product import Product, ProductI18n
+from app.models.product_channel import ProductChannel
+from app.models.channel import Channel
+from app.models.product_compliance import ProductCompliance
+from app.models.product_logistics import ProductLogistics
 from app.models.quality_rule import QualityRule, QualityRuleSet
+from app.models.supplier import Supplier, ProductSupplier
 from app.models.sync_job import SyncJob
 
 # ── Datos de muestra ──────────────────────────────────────────────────────────
@@ -251,9 +258,9 @@ PRODUCTS = [
 
 
 SYNC_JOBS = [
-    # Job completado con éxito — CSV con filtro "ready"
+    # Job completado con éxito — B2C (FTP) con filtro "ready"
     {
-        "channel": "csv",
+        "channel_code": "b2c",
         "status": "done",
         "filters": {"status": "ready"},
         "started_at": "2026-03-10T08:00:00",
@@ -261,9 +268,9 @@ SYNC_JOBS = [
         "metrics": {"total_products": 8, "exported": 8, "skipped": 0, "errors": []},
         "error_message": None,
     },
-    # Job completado — CSV sin filtros (todos los productos)
+    # Job completado — B2C (FTP) sin filtros (todos los productos)
     {
-        "channel": "csv",
+        "channel_code": "b2c",
         "status": "done",
         "filters": {},
         "started_at": "2026-03-09T14:30:00",
@@ -271,9 +278,9 @@ SYNC_JOBS = [
         "metrics": {"total_products": 18, "exported": 18, "skipped": 0, "errors": []},
         "error_message": None,
     },
-    # Job completado con skips — HTTP con filtro de marca
+    # Job completado con skips — Amazon (HTTP POST) con filtro de marca
     {
-        "channel": "http",
+        "channel_code": "amazon",
         "status": "done",
         "filters": {"brand": "Apple"},
         "started_at": "2026-03-10T10:15:00",
@@ -281,19 +288,19 @@ SYNC_JOBS = [
         "metrics": {"total_products": 4, "exported": 3, "skipped": 1, "errors": ["AUDIO-AIRPD-PRO: HTTP 503"]},
         "error_message": None,
     },
-    # Job fallido — HTTP endpoint no disponible
+    # Job fallido — Amazon (HTTP POST) endpoint no disponible
     {
-        "channel": "http",
+        "channel_code": "amazon",
         "status": "failed",
         "filters": {"status": "ready", "brand": "Samsung"},
         "started_at": "2026-03-11T07:00:00",
         "finished_at": "2026-03-11T07:00:03",
         "metrics": {"total_products": 0, "exported": 0, "skipped": 0, "errors": ["ConnectionError: endpoint no accesible"]},
-        "error_message": "ConnectionError: All connection attempts failed — endpoint https://api.example.com/products no accesible",
+        "error_message": "ConnectionError: All connection attempts failed — endpoint https://api.amazon.com/products no accesible",
     },
-    # Job en cola (aún no ha arrancado)
+    # Job en cola (aún no ha arrancado) — B2C (FTP)
     {
-        "channel": "csv",
+        "channel_code": "b2c",
         "status": "queued",
         "filters": {"status": "draft"},
         "started_at": None,
@@ -301,9 +308,9 @@ SYNC_JOBS = [
         "metrics": {},
         "error_message": None,
     },
-    # Job completado — HTTP exportación masiva exitosa
+    # Job completado — Miravia (HTTP POST) exportación masiva exitosa
     {
-        "channel": "http",
+        "channel_code": "miravia",
         "status": "done",
         "filters": {"status": "ready"},
         "started_at": "2026-03-08T16:00:00",
@@ -311,9 +318,9 @@ SYNC_JOBS = [
         "metrics": {"total_products": 8, "exported": 8, "skipped": 0, "errors": []},
         "error_message": None,
     },
-    # Job completado — CSV filtrado por categoría
+    # Job completado — B2B (SSH) filtrado por marca Sony
     {
-        "channel": "csv",
+        "channel_code": "b2b",
         "status": "done",
         "filters": {"brand": "Sony"},
         "started_at": "2026-03-07T09:00:00",
@@ -322,6 +329,293 @@ SYNC_JOBS = [
         "error_message": None,
     },
 ]
+
+BRANDS = [
+    {"name": "Samsung",      "slug": "samsung",       "website": "https://www.samsung.com",   "description": "Lider global en electronica de consumo y semiconductores."},
+    {"name": "Apple",        "slug": "apple",         "website": "https://www.apple.com",     "description": "Tecnologia, software y servicios premium."},
+    {"name": "Google",       "slug": "google",        "website": "https://store.google.com",  "description": "Hardware y servicios de Google."},
+    {"name": "Xiaomi",       "slug": "xiaomi",        "website": "https://www.mi.com",        "description": "Smartphones y electrodomesticos de gran relacion calidad/precio."},
+    {"name": "OPPO",         "slug": "oppo",          "website": "https://www.oppo.com",      "description": "Fabricante chino de smartphones con camara innovadora."},
+    {"name": "Dell",         "slug": "dell",          "website": "https://www.dell.com",      "description": "Computadoras y servidores empresariales."},
+    {"name": "Lenovo",       "slug": "lenovo",        "website": "https://www.lenovo.com",    "description": "Tecnologia personal y empresarial."},
+    {"name": "Sony",         "slug": "sony",          "website": "https://www.sony.com",      "description": "Electronica de consumo y entretenimiento."},
+    {"name": "Bose",         "slug": "bose",          "website": "https://www.bose.com",      "description": "Audio premium y cancelacion de ruido."},
+    {"name": "JBL",          "slug": "jbl",           "website": "https://www.jbl.com",       "description": "Audio portatil y de alta fidelidad."},
+    {"name": "Nike",         "slug": "nike",          "website": "https://www.nike.com",      "description": "Ropa y calzado deportivo."},
+    {"name": "Adidas",       "slug": "adidas",        "website": "https://www.adidas.com",    "description": "Ropa, calzado y accesorios deportivos."},
+    {"name": "Zara",         "slug": "zara",          "website": "https://www.zara.com",      "description": "Moda accesible de tendencia. Grupo Inditex."},
+    {"name": "Instant Pot",  "slug": "instant-pot",   "website": "https://www.instanthome.com","description": "Utensilios de cocina multifuncion."},
+    {"name": "IKEA",         "slug": "ikea",          "website": "https://www.ikea.com",      "description": "Muebles y decoracion para el hogar."},
+    {"name": "Dyson",        "slug": "dyson",         "website": "https://www.dyson.com",     "description": "Aspiradoras, purificadores y cuidado del cabello."},
+]
+
+SUPPLIERS = [
+    {
+        "name": "Tech Distributors SL",
+        "code": "TD-ES",
+        "country": "ES",
+        "contact_email": "ventas@techdist.es",
+        "contact_phone": "+34 91 234 5678",
+        "notes": "Distribuidor oficial Samsung y Sony en Peninsula Iberica. MOQ 50 unidades.",
+        "active": True,
+    },
+    {
+        "name": "Apple Premium Reseller",
+        "code": "APR-EU",
+        "country": "DE",
+        "contact_email": "orders@apr-eu.com",
+        "contact_phone": "+49 89 987 6543",
+        "notes": "Distribuidor autorizado Apple para Europa central. SLA 48h.",
+        "active": True,
+    },
+    {
+        "name": "Global Imports HK",
+        "code": "GI-HK",
+        "country": "HK",
+        "contact_email": "b2b@globalimports.hk",
+        "contact_phone": "+852 3456 7890",
+        "notes": "Importador directo desde fabrica Xiaomi y OPPO. Lead time 21 dias.",
+        "active": True,
+    },
+    {
+        "name": "Fashion Wholesale FR",
+        "code": "FW-FR",
+        "country": "FR",
+        "contact_email": "wholesale@fashionwf.fr",
+        "contact_phone": "+33 1 23 45 67 89",
+        "notes": "Mayorista de moda Nike, Adidas y Zara para mercado europeo.",
+        "active": True,
+    },
+    {
+        "name": "Discontinued Supplier",
+        "code": "OLD-SUP",
+        "country": "CN",
+        "contact_email": None,
+        "contact_phone": None,
+        "notes": "Proveedor discontinuado en 2025.",
+        "active": False,
+    },
+]
+
+# Logistics data for some products: sku → fields
+PRODUCT_LOGISTICS = {
+    "PHONE-S24-BLK": {
+        "base_unit": "pieza", "box_units": 20, "pallet_boxes": 50,
+        "height_mm": 147, "width_mm": 70, "depth_mm": 7,
+        "weight_gross_g": 190, "weight_net_g": 167,
+        "packaging_type": "Caja retail", "stackable": True, "adr": False,
+    },
+    "PHONE-IP15-WHT": {
+        "base_unit": "pieza", "box_units": 12, "pallet_boxes": 60,
+        "height_mm": 147, "width_mm": 71, "depth_mm": 8,
+        "weight_gross_g": 205, "weight_net_g": 187,
+        "packaging_type": "Caja retail", "stackable": True, "adr": False,
+    },
+    "LAPTOP-MBP-14": {
+        "base_unit": "pieza", "box_units": 5, "pallet_boxes": 20,
+        "height_mm": 312, "width_mm": 221, "depth_mm": 16,
+        "weight_gross_g": 1800, "weight_net_g": 1610,
+        "packaging_type": "Caja de carton reforzada", "stackable": False, "adr": False,
+    },
+    "AUDIO-SONY-WH": {
+        "base_unit": "pieza", "box_units": 24, "pallet_boxes": 40,
+        "height_mm": 220, "width_mm": 185, "depth_mm": 80,
+        "weight_gross_g": 400, "weight_net_g": 255,
+        "packaging_type": "Caja retail con estuche", "stackable": True, "adr": False,
+    },
+    "HOGAR-INS-OLLA32": {
+        "base_unit": "pieza", "box_units": 4, "pallet_boxes": 8,
+        "height_mm": 330, "width_mm": 320, "depth_mm": 320,
+        "weight_gross_g": 6200, "weight_net_g": 5200,
+        "packaging_type": "Caja carton doble canal", "stackable": False, "adr": False,
+    },
+}
+
+# Compliance data for some products: sku → fields
+PRODUCT_COMPLIANCE = {
+    "PHONE-S24-BLK": {
+        "certifications": ["CE", "FCC", "RoHS", "WEEE"],
+        "country_of_origin": "KR", "hs_code": "8517120000",
+        "has_lot_traceability": False, "has_expiry_date": False,
+        "legal_warnings": "Mantener alejado del alcance de los ninos menores de 3 anos.",
+    },
+    "PHONE-IP15-WHT": {
+        "certifications": ["CE", "FCC", "RoHS", "MFi"],
+        "country_of_origin": "CN", "hs_code": "8517120000",
+        "has_lot_traceability": False, "has_expiry_date": False,
+    },
+    "LAPTOP-MBP-14": {
+        "certifications": ["CE", "FCC", "RoHS", "Energy Star"],
+        "country_of_origin": "CN", "hs_code": "8471300000",
+        "has_lot_traceability": False, "has_expiry_date": False,
+    },
+    "AUDIO-SONY-WH": {
+        "certifications": ["CE", "FCC", "RoHS"],
+        "country_of_origin": "CN", "hs_code": "8518300000",
+        "has_lot_traceability": False, "has_expiry_date": False,
+    },
+    "HOGAR-INS-OLLA32": {
+        "certifications": ["CE", "RoHS", "UL"],
+        "country_of_origin": "CN", "hs_code": "8516600000",
+        "legal_warnings": "No sumergir en agua. Leer el manual antes de usar.",
+        "has_lot_traceability": False, "has_expiry_date": False,
+    },
+}
+
+# Channel catalog for some products
+CHANNELS = [
+    {
+        "name": "Tienda B2C",
+        "code": "b2c",
+        "description": "Canal directo al consumidor final",
+        "active": True,
+        "connection_type": "ftp",
+        "connection_config": {
+            "host": "ftp.tienda.com",
+            "port": 21,
+            "username": "pim_user",
+            "password": "",
+            "remote_path": "/products/export/",
+            "passive": True,
+        },
+    },
+    {
+        "name": "B2B / Distribuidores",
+        "code": "b2b",
+        "description": "Canal para clientes empresariales y distribuidores",
+        "active": True,
+        "connection_type": "ssh",
+        "connection_config": {
+            "host": "sftp.distribuidores.com",
+            "port": 22,
+            "username": "pim_sync",
+            "password": "",
+            "remote_path": "/data/products/",
+            "private_key": None,
+        },
+    },
+    {
+        "name": "Amazon",
+        "code": "amazon",
+        "description": "Marketplace Amazon EU",
+        "active": True,
+        "connection_type": "http_post",
+        "connection_config": {
+            "url": "https://api.amazon.com/products",
+            "timeout": 30,
+            "auth_type": "bearer",
+            "token": "",
+            "headers": {},
+        },
+    },
+    {
+        "name": "Miravia",
+        "code": "miravia",
+        "description": "Marketplace Miravia",
+        "active": True,
+        "connection_type": "http_post",
+        "connection_config": {
+            "url": "https://api.miravia.es/catalog/products",
+            "timeout": 30,
+            "auth_type": "bearer",
+            "token": "",
+            "headers": {},
+        },
+    },
+    {
+        "name": "eBay",
+        "code": "ebay",
+        "description": "Marketplace eBay",
+        "active": True,
+        "connection_type": "http_post",
+        "connection_config": {
+            "url": "https://api.ebay.com/sell/inventory/v1/bulk_create_or_replace_inventory_item",
+            "timeout": 30,
+            "auth_type": "bearer",
+            "token": "",
+            "headers": {"Content-Language": "es-ES"},
+        },
+    },
+    {
+        "name": "Otros",
+        "code": "other",
+        "description": "Canal genérico",
+        "active": True,
+        "connection_type": None,
+        "connection_config": {},
+    },
+]
+
+# Channel data for some products: sku → list of channel dicts (using channel_code)
+PRODUCT_CHANNELS = {
+    "PHONE-S24-BLK": [
+        {"channel_code": "b2c",    "name": "Samsung Galaxy S24 Negro",            "active": True},
+        {"channel_code": "amazon", "name": "Samsung Galaxy S24 Black 256GB",       "active": True, "country_restrictions": ["DE", "FR", "ES", "IT"]},
+    ],
+    "PHONE-IP15-WHT": [
+        {"channel_code": "b2c",    "name": "iPhone 15 Pro Natural White",          "active": True},
+        {"channel_code": "amazon", "name": "Apple iPhone 15 Pro 128GB White",      "active": True},
+        {"channel_code": "b2b",    "name": "iPhone 15 Pro (Business)",             "active": False},
+    ],
+    "LAPTOP-MBP-14": [
+        {"channel_code": "b2c",    "name": "MacBook Pro 14 M3",                    "active": True},
+        {"channel_code": "b2b",    "name": 'MacBook Pro 14" for Business',         "active": True},
+    ],
+    "AUDIO-SONY-WH": [
+        {"channel_code": "b2c",    "name": "Sony WH-1000XM5 Negro",               "active": True},
+        {"channel_code": "amazon", "name": "Sony WH1000XM5 Wireless Headphones",   "active": True},
+    ],
+}
+
+# Supplier links: sku → list of {supplier_code, is_primary, ...}
+PRODUCT_SUPPLIER_LINKS = {
+    "PHONE-S24-BLK":  [{"code": "TD-ES",  "is_primary": True,  "moq": 50,  "lead_time_days": 7,  "purchase_price": 720.00, "currency": "EUR"}],
+    "PHONE-IP15-WHT": [{"code": "APR-EU", "is_primary": True,  "moq": 12,  "lead_time_days": 5,  "purchase_price": 950.00, "currency": "EUR"}],
+    "PHONE-PIX8-GRN": [{"code": "GI-HK",  "is_primary": True,  "moq": 100, "lead_time_days": 21, "purchase_price": 380.00, "currency": "USD"}],
+    "PHONE-XIA-BLU":  [{"code": "GI-HK",  "is_primary": True,  "moq": 200, "lead_time_days": 21, "purchase_price": 290.00, "currency": "USD"}],
+    "AUDIO-SONY-WH":  [{"code": "TD-ES",  "is_primary": True,  "moq": 24,  "lead_time_days": 10, "purchase_price": 230.00, "currency": "EUR"}],
+    "ROPA-NKE-TEE-M": [{"code": "FW-FR",  "is_primary": True,  "moq": 100, "lead_time_days": 14, "purchase_price": 18.50, "currency": "EUR"}],
+    "ROPA-ADI-JACK-L":[{"code": "FW-FR",  "is_primary": True,  "moq": 50,  "lead_time_days": 14, "purchase_price": 32.00, "currency": "EUR"}],
+}
+
+EXTERNAL_TAXONOMIES = [
+    {
+        "name": "GS1 GPC",
+        "provider": "GS1",
+        "description": "Global Product Classification de GS1. Estandar internacional para clasificacion de productos de consumo.",
+    },
+    {
+        "name": "Amazon Browse Tree",
+        "provider": "Amazon",
+        "description": "Arbol de navegacion de Amazon para categorizar productos en el marketplace.",
+    },
+    {
+        "name": "Google Product Taxonomy",
+        "provider": "Google",
+        "description": "Taxonomia de Google Shopping para anuncios de productos.",
+    },
+]
+
+# Product → external taxonomy mappings: sku → list of {taxonomy_name, node_code, node_name, node_path}
+PRODUCT_TAXONOMIES = {
+    "PHONE-S24-BLK": [
+        {"taxonomy": "GS1 GPC", "node_code": "60060000", "node_name": "Smartphones", "node_path": "IT Products > Mobile Phones > Smartphones"},
+        {"taxonomy": "Amazon Browse Tree", "node_code": "2335752011", "node_name": "Unlocked Cell Phones", "node_path": "Electronics > Cell Phones & Accessories > Cell Phones > Unlocked Phones"},
+        {"taxonomy": "Google Product Taxonomy", "node_code": "267", "node_name": "Telefonos moviles", "node_path": "Electronics > Communications > Telefonos > Telefonos moviles"},
+    ],
+    "PHONE-IP15-WHT": [
+        {"taxonomy": "GS1 GPC", "node_code": "60060000", "node_name": "Smartphones", "node_path": "IT Products > Mobile Phones > Smartphones"},
+        {"taxonomy": "Amazon Browse Tree", "node_code": "2335752011", "node_name": "Unlocked Cell Phones", "node_path": "Electronics > Cell Phones & Accessories > Cell Phones > Unlocked Phones"},
+    ],
+    "LAPTOP-MBP-14": [
+        {"taxonomy": "GS1 GPC", "node_code": "60050000", "node_name": "Laptops", "node_path": "IT Products > Computers > Portable Computers > Laptops"},
+        {"taxonomy": "Google Product Taxonomy", "node_code": "328", "node_name": "Ordenadores portatiles", "node_path": "Electronics > Computers > Ordenadores portatiles"},
+    ],
+    "AUDIO-SONY-WH": [
+        {"taxonomy": "GS1 GPC", "node_code": "60080000", "node_name": "Headphones", "node_path": "IT Products > Audio Equipment > Headphones"},
+        {"taxonomy": "Amazon Browse Tree", "node_code": "172541", "node_name": "Over-Ear Headphones", "node_path": "Electronics > Headphones > Over-Ear Headphones"},
+    ],
+}
 
 QUALITY_RULE_SETS = [
     {
@@ -373,14 +667,79 @@ SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=
 
 async def wipe_product_data(db: AsyncSession) -> None:
     """Elimina solo los datos de muestra (NO el usuario admin)."""
-    for table in (AuditLog, ProductI18n, MediaAsset, Product, Category, SyncJob, QualityRule, QualityRuleSet):
+    for table in (
+        AuditLog, ProductI18n, MediaAsset,
+        ProductExternalTaxonomy, ProductSupplier,
+        ProductChannel, ProductCompliance, ProductLogistics,
+        Product, Category, SyncJob, QualityRule, QualityRuleSet,
+        Supplier, ExternalTaxonomy, Brand, Channel,
+    ):
         await db.execute(delete(table))
     await db.commit()
     print("  [wipe] Datos previos eliminados")
 
 
+async def seed_brands(db: AsyncSession) -> None:
+    """Crea el catalogo de marcas."""
+    for b in BRANDS:
+        brand = Brand(
+            name=b["name"],
+            slug=b["slug"],
+            description=b.get("description"),
+            website=b.get("website"),
+            active=True,
+        )
+        db.add(brand)
+        print(f"  [brand] {b['name']}")
+    await db.commit()
+
+
+async def seed_suppliers(db: AsyncSession) -> dict[str, str]:
+    """Crea proveedores y devuelve code→id."""
+    code_to_id: dict[str, str] = {}
+    for s in SUPPLIERS:
+        supplier = Supplier(
+            name=s["name"],
+            code=s.get("code"),
+            country=s.get("country"),
+            contact_email=s.get("contact_email"),
+            contact_phone=s.get("contact_phone"),
+            notes=s.get("notes"),
+            active=s.get("active", True),
+        )
+        db.add(supplier)
+        await db.flush()
+        if s.get("code"):
+            code_to_id[s["code"]] = supplier.id
+        status = "activo" if s["active"] else "inactivo"
+        print(f"  [supplier] {s['name']} ({status})")
+    await db.commit()
+    return code_to_id
+
+
+async def seed_channels(db: AsyncSession) -> dict[str, str]:
+    """Crea el catálogo de canales y devuelve code→id."""
+    code_to_id: dict[str, str] = {}
+    for c in CHANNELS:
+        channel = Channel(
+            name=c["name"],
+            code=c["code"],
+            description=c.get("description"),
+            active=c.get("active", True),
+            connection_type=c.get("connection_type"),
+            connection_config=c.get("connection_config") or {},
+        )
+        db.add(channel)
+        await db.flush()
+        code_to_id[c["code"]] = channel.id
+        status = "activo" if c["active"] else "inactivo"
+        conn = c.get("connection_type") or "sin conexión"
+        print(f"  [channel] {c['name']} ({status}) — {conn}")
+    await db.commit()
+    return code_to_id
+
+
 async def seed_categories(db: AsyncSession) -> dict[str, str]:
-    """Crea el árbol de categorías y devuelve slug→id."""
     slug_to_id: dict[str, str] = {}
     for slug, name, parent_slug, attr_schema in CATEGORIES:
         parent_id = slug_to_id.get(parent_slug) if parent_slug else None
@@ -454,15 +813,28 @@ def _estimate_quality(p: dict) -> int:
     return round(score / 6 * 100)
 
 
-async def seed_sync_jobs(db: AsyncSession) -> None:
+async def seed_sync_jobs(db: AsyncSession, channel_code_to_id: dict[str, str]) -> None:
     """Crea jobs de sincronización de ejemplo en distintos estados."""
     from datetime import datetime
 
+    # Build a code→channel-data map for inherited connection info
+    channel_data_map = {c["code"]: c for c in CHANNELS}
+
     for j in SYNC_JOBS:
+        code = j["channel_code"]
+        channel_id = channel_code_to_id.get(code)
+        if not channel_id:
+            print(f"  [WARN] Canal '{code}' no encontrado, omitiendo sync job")
+            continue
+        ch_data = channel_data_map[code]
         started = datetime.fromisoformat(j["started_at"]) if j["started_at"] else None
         finished = datetime.fromisoformat(j["finished_at"]) if j["finished_at"] else None
         job = SyncJob(
-            channel=j["channel"],
+            channel_id=channel_id,
+            channel_code=ch_data["code"],
+            channel_name=ch_data["name"],
+            connection_type=ch_data.get("connection_type"),
+            connection_config=ch_data.get("connection_config") or {},
             status=j["status"],
             filters=j["filters"],
             started_at=started,
@@ -472,7 +844,8 @@ async def seed_sync_jobs(db: AsyncSession) -> None:
         )
         db.add(job)
         filters_str = ", ".join(f"{k}={v}" for k, v in j["filters"].items()) if j["filters"] else "sin filtros"
-        print(f"  [sync] {j['channel']:<6} {j['status']:<8} ({filters_str})")
+        conn = ch_data.get("connection_type") or "http"
+        print(f"  [sync] {ch_data['name']:<20} {j['status']:<8} {conn:<10} ({filters_str})")
     await db.commit()
 
 
@@ -500,6 +873,99 @@ async def seed_quality_rules(db: AsyncSession) -> None:
     await db.commit()
 
 
+async def seed_logistics_compliance_channels_taxonomies(
+    db: AsyncSession,
+    taxonomy_name_to_id: dict[str, str],
+    supplier_code_to_id: dict[str, str],
+    channel_code_to_id: dict[str, str],
+) -> None:
+    """Crea datos de logistica, cumplimiento, canales, proveedores y taxonomias."""
+    # Logistics
+    for sku, data in PRODUCT_LOGISTICS.items():
+        obj = ProductLogistics(sku=sku, **data)
+        db.add(obj)
+        print(f"  [logistics] {sku}")
+
+    # Compliance
+    for sku, data in PRODUCT_COMPLIANCE.items():
+        obj = ProductCompliance(sku=sku, **data)
+        db.add(obj)
+        print(f"  [compliance] {sku}")
+
+    # Channels
+    for sku, channels in PRODUCT_CHANNELS.items():
+        for ch in channels:
+            channel_id = channel_code_to_id.get(ch["channel_code"])
+            if not channel_id:
+                print(f"  [WARN] Canal '{ch['channel_code']}' no encontrado, omitiendo")
+                continue
+            obj = ProductChannel(
+                sku=sku,
+                channel_id=channel_id,
+                name=ch.get("name"),
+                active=ch.get("active", True),
+                country_restrictions=ch.get("country_restrictions", []),
+                marketplace_fields=ch.get("marketplace_fields", {}),
+            )
+            db.add(obj)
+        print(f"  [channels] {sku} — {len(channels)} canales")
+
+    await db.flush()
+
+    # Supplier links
+    for sku, links in PRODUCT_SUPPLIER_LINKS.items():
+        for link in links:
+            supplier_id = supplier_code_to_id.get(link["code"])
+            if not supplier_id:
+                continue
+            obj = ProductSupplier(
+                sku=sku,
+                supplier_id=supplier_id,
+                is_primary=link.get("is_primary", False),
+                moq=link.get("moq"),
+                lead_time_days=link.get("lead_time_days"),
+                purchase_price=link.get("purchase_price"),
+                currency=link.get("currency"),
+            )
+            db.add(obj)
+        print(f"  [supplier-link] {sku} — {len(links)} proveedores")
+
+    # External taxonomy mappings
+    for sku, mappings in PRODUCT_TAXONOMIES.items():
+        for m in mappings:
+            taxonomy_id = taxonomy_name_to_id.get(m["taxonomy"])
+            if not taxonomy_id:
+                continue
+            obj = ProductExternalTaxonomy(
+                sku=sku,
+                taxonomy_id=taxonomy_id,
+                node_code=m.get("node_code"),
+                node_name=m.get("node_name"),
+                node_path=m.get("node_path"),
+            )
+            db.add(obj)
+        print(f"  [taxonomy] {sku} — {len(mappings)} mapeos")
+
+    await db.commit()
+
+
+async def seed_external_taxonomies(db: AsyncSession) -> dict[str, str]:
+    """Crea las taxonomias externas y devuelve name→id."""
+    name_to_id: dict[str, str] = {}
+    for t in EXTERNAL_TAXONOMIES:
+        obj = ExternalTaxonomy(
+            name=t["name"],
+            provider=t["provider"],
+            description=t.get("description"),
+        )
+        db.add(obj)
+        await db.flush()
+        name_to_id[t["name"]] = obj.id
+        print(f"  [taxonomy-catalog] {t['name']} ({t['provider']})")
+    await db.commit()
+    return name_to_id
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
@@ -513,24 +979,41 @@ async def main() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
     async with SessionLocal() as db:
-        print("1/5  Limpiando datos previos…")
+        print("1/9  Limpiando datos previos…")
         await wipe_product_data(db)
 
-        print("\n2/5  Creando categorías…")
+        print(f"\n2/9  Creando {len(BRANDS)} marcas…")
+        await seed_brands(db)
+
+        print(f"\n3/9  Creando {len(SUPPLIERS)} proveedores…")
+        supplier_code_to_id = await seed_suppliers(db)
+
+        print(f"\n3b/9  Creando {len(CHANNELS)} canales…")
+        channel_code_to_id = await seed_channels(db)
+
+        print(f"\n4/9  Creando {len(EXTERNAL_TAXONOMIES)} taxonomias externas…")
+        taxonomy_name_to_id = await seed_external_taxonomies(db)
+
+        print("\n5/9  Creando categorias…")
         slug_to_id = await seed_categories(db)
 
-        print(f"\n3/5  Creando {len(PRODUCTS)} productos…")
+        print(f"\n6/9  Creando {len(PRODUCTS)} productos…")
         await seed_products(db, slug_to_id)
 
-        print(f"\n4/5  Creando {len(SYNC_JOBS)} sync jobs de ejemplo…")
-        await seed_sync_jobs(db)
+        print("\n7/9  Creando logistica, cumplimiento, canales y taxonomias de productos…")
+        await seed_logistics_compliance_channels_taxonomies(db, taxonomy_name_to_id, supplier_code_to_id, channel_code_to_id)
 
-        print(f"\n5/5  Creando {len(QUALITY_RULE_SETS)} conjuntos de reglas de calidad…")
+        print(f"\n8/9  Creando {len(SYNC_JOBS)} sync jobs de ejemplo…")
+        await seed_sync_jobs(db, channel_code_to_id)
+
+        print(f"\n9/9  Creando {len(QUALITY_RULE_SETS)} conjuntos de reglas de calidad…")
         await seed_quality_rules(db)
 
     await engine.dispose()
 
-    print(f"\n✓ Listo — {len(CATEGORIES)} categorías · {len(PRODUCTS)} productos · {len(SYNC_JOBS)} sync jobs · {len(QUALITY_RULE_SETS)} rule sets")
+    print(f"\n✓ Listo — {len(BRANDS)} marcas · {len(SUPPLIERS)} proveedores · {len(CHANNELS)} canales")
+    print(f"          {len(CATEGORIES)} categorias · {len(PRODUCTS)} productos")
+    print(f"          {len(EXTERNAL_TAXONOMIES)} taxonomias · {len(SYNC_JOBS)} sync jobs · {len(QUALITY_RULE_SETS)} rule sets")
     print("  Abre http://localhost:8000/docs para explorar la API")
     print("  Abre http://localhost:5173 para ver el frontend\n")
 

@@ -40,7 +40,8 @@ import {
 import { ArrowBack, Delete, Link, UploadFile, ExpandMore, ExpandLess, CompareArrows, Comment, Send, Reply, Edit, Check, Close, FilterList, Label } from '@mui/icons-material';
 import { getProduct, updateProduct, transitionProduct, getProductVersions, restoreProductVersion, getVersionComments, createVersionComment, getProductComments, createProductComment, updateProductComment, deleteProductComment, getCommentReplies, submitForReview, approveProduct, rejectProduct } from '../../api/products';
 import type { VersionComment, CommentFilters } from '../../api/products';
-import { listMedia, uploadMedia, deleteMedia } from '../../api/media';
+import { listMedia, uploadMedia, deleteMedia, updateMedia } from '../../api/media';
+import { MEDIA_TYPE_LABELS, MEDIA_TYPES } from '../../types/media';
 import { getProductTranslations, upsertTranslation, deleteTranslation } from '../../api/i18n';
 import { getProductQuality } from '../../api/quality';
 import { API_ORIGIN } from '../../api/client';
@@ -56,6 +57,17 @@ import { listBrands } from '../../api/brands';
 import type { Brand } from '../../types/brand';
 import { getProductSyncHistory, getProductSyncStatus } from '../../api/sync';
 import type { ProductSyncHistory, ProductSyncStatus } from '../../types/sync';
+import {
+  getLogistics, updateLogistics,
+  getCompliance, updateCompliance,
+  listChannelCatalog, listChannels, upsertChannel, deleteChannel,
+  listProductSuppliers, addProductSupplier, updateProductSupplier, removeProductSupplier,
+  listExternalTaxonomies, listProductTaxonomies, upsertProductTaxonomy, removeProductTaxonomy,
+} from '../../api/product_extras';
+import type {
+  ProductLogistics, ProductCompliance, Channel, ProductChannel,
+  ProductSupplier, Supplier, ExternalTaxonomy, ProductTaxonomy,
+} from '../../types/product';
 
 const DIMENSION_LABELS: Record<string, string> = {
   brand: 'Marca',
@@ -135,6 +147,52 @@ export default function ProductDetail() {
   const [syncHistory, setSyncHistory] = useState<ProductSyncHistory[]>([]);
   const [syncStatuses, setSyncStatuses] = useState<ProductSyncStatus[]>([]);
 
+  // Identity / descriptions fields (tab 0)
+  const [editName, setEditName] = useState('');
+  const [editEanGtin, setEditEanGtin] = useState('');
+  const [editDun14, setEditDun14] = useState('');
+  const [editSupplierRef, setEditSupplierRef] = useState('');
+  const [editShortDescription, setEditShortDescription] = useState('');
+  const [editLongDescription, setEditLongDescription] = useState('');
+  const [editKeyBenefits, setEditKeyBenefits] = useState('');
+  const [editSalesPitch, setEditSalesPitch] = useState('');
+  const [editMarketingClaims, setEditMarketingClaims] = useState('');
+  const [editMarketplaceText, setEditMarketplaceText] = useState('');
+
+  // Logistics tab
+  const [logistics, setLogistics] = useState<ProductLogistics | null>(null);
+  const [editLogistics, setEditLogistics] = useState<Partial<ProductLogistics>>({});
+  const [logisticsSaving, setLogisticsSaving] = useState(false);
+
+  // Compliance tab
+  const [compliance, setCompliance] = useState<ProductCompliance | null>(null);
+  const [editCompliance, setEditCompliance] = useState<Partial<ProductCompliance>>({});
+  const [complianceSaving, setComplianceSaving] = useState(false);
+
+  // Channels tab
+  const [channels, setChannels] = useState<ProductChannel[]>([]);
+  const [allChannels, setAllChannels] = useState<Channel[]>([]);
+  const [channelSaving, setChannelSaving] = useState(false);
+  const [selectedChannelId, setSelectedChannelId] = useState('');
+  const [editChannel, setEditChannel] = useState<Partial<ProductChannel>>({});
+
+  // Suppliers tab
+  const [productSuppliers, setProductSuppliers] = useState<ProductSupplier[]>([]);
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
+  const [supplierSaving, setSupplierSaving] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<ProductSupplier | null>(null);
+  const [editSupplierForm, setEditSupplierForm] = useState<Partial<ProductSupplier>>({});
+  const [editSupplierSaving, setEditSupplierSaving] = useState(false);
+
+  // External taxonomies tab
+  const [extTaxonomies, setExtTaxonomies] = useState<ExternalTaxonomy[]>([]);
+  const [productTaxonomies, setProductTaxonomies] = useState<ProductTaxonomy[]>([]);
+  const [selectedTaxonomyId, setSelectedTaxonomyId] = useState('');
+  const [editTaxonomyNodeCode, setEditTaxonomyNodeCode] = useState('');
+  const [editTaxonomyNodeName, setEditTaxonomyNodeName] = useState('');
+  const [taxonomySaving, setTaxonomySaving] = useState(false);
+
   const refreshSyncHistory = useCallback(async () => {
     if (!sku) return;
     const [hist, st] = await Promise.all([
@@ -212,13 +270,31 @@ export default function ProductDetail() {
       listFamilies().catch(() => []),
       getProductComments(sku).catch(() => []),
       listBrands().catch(() => []),
+      getLogistics(sku).catch(() => null),
+      getCompliance(sku).catch(() => null),
+      listChannels(sku).catch(() => []),
+      listChannelCatalog().catch(() => []),
+      listProductSuppliers(sku).catch(() => []),
+      listExternalTaxonomies().catch(() => []),
+      listProductTaxonomies(sku).catch(() => []),
     ])
-      .then(async ([p, m, t, q, v, cats, fams, comments, brs]) => {
+      .then(async ([p, m, t, q, v, cats, fams, comments, brs, logist, compl, chans, allChans, prodSupps, extTaxs, prodTaxs]) => {
         setProduct(p);
         setEditBrand(p.brand);
         setEditCategoryId(p.category_id);
         setEditAttributes(JSON.stringify(p.attributes, null, 2));
         setEditSeo(JSON.stringify(p.seo, null, 2));
+        // Identity fields
+        setEditName(p.name || '');
+        setEditEanGtin(p.ean_gtin || '');
+        setEditDun14(p.dun14 || '');
+        setEditSupplierRef(p.supplier_ref || '');
+        setEditShortDescription(p.short_description || '');
+        setEditLongDescription(p.long_description || '');
+        setEditKeyBenefits((p.key_benefits || []).join('\n'));
+        setEditSalesPitch(p.sales_pitch || '');
+        setEditMarketingClaims((p.marketing_claims || []).join('\n'));
+        setEditMarketplaceText(JSON.stringify(p.marketplace_text || {}, null, 2));
         setMedia(m);
         setTranslations(t);
         setQuality(q);
@@ -229,6 +305,13 @@ export default function ProductDetail() {
         setBrands(brs);
         setEditFamilyId(p.family_id || null);
         setStructuredAttrs(p.attributes || {});
+        if (logist) { setLogistics(logist); setEditLogistics(logist); }
+        if (compl) { setCompliance(compl); setEditCompliance(compl); }
+        setChannels(chans);
+        setAllChannels(allChans);
+        setProductSuppliers(prodSupps);
+        setExtTaxonomies(extTaxs);
+        setProductTaxonomies(prodTaxs);
         // Load definitions if product has a family
         if (p.family_id) {
           try {
@@ -236,6 +319,11 @@ export default function ProductDetail() {
             setFamilyDefs(defs);
           } catch { /* ignore */ }
         }
+        // Load all suppliers for the dropdown
+        try {
+          const { listSuppliers } = await import('../../api/product_extras');
+          setAllSuppliers(await listSuppliers());
+        } catch { /* ignore */ }
         // Load sync history
         await refreshSyncHistory();
       })
@@ -255,7 +343,23 @@ export default function ProductDetail() {
     if (!sku) return;
     setSaving(true);
     try {
-      const updated = await updateProduct(sku, { brand: editBrand, category_id: editCategoryId, family_id: editFamilyId });
+      let marketplaceTextParsed: Record<string, string> = {};
+      try { marketplaceTextParsed = JSON.parse(editMarketplaceText); } catch { /* keep empty */ }
+      const updated = await updateProduct(sku, {
+        brand: editBrand,
+        category_id: editCategoryId,
+        family_id: editFamilyId,
+        name: editName || null,
+        ean_gtin: editEanGtin || null,
+        dun14: editDun14 || null,
+        supplier_ref: editSupplierRef || null,
+        short_description: editShortDescription || null,
+        long_description: editLongDescription || null,
+        key_benefits: editKeyBenefits.split('\n').map((l) => l.trim()).filter(Boolean),
+        sales_pitch: editSalesPitch || null,
+        marketing_claims: editMarketingClaims.split('\n').map((l) => l.trim()).filter(Boolean),
+        marketplace_text: marketplaceTextParsed,
+      });
       setProduct(updated);
       setMessage('Producto actualizado');
       refreshQuality();
@@ -676,7 +780,7 @@ export default function ProductDetail() {
       </Box>
 
       <Paper sx={{ mb: 2 }}>
-        <Tabs value={tab} onChange={(_, v) => setTab(v)}>
+        <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" scrollButtons="auto">
           <Tab label="General" />
           <Tab label="Atributos" />
           <Tab label={`I18N (${translations.length})`} />
@@ -686,6 +790,11 @@ export default function ProductDetail() {
           <Tab label={`Comentarios (${productComments.length})`} />
           <Tab label="Historial" />
           <Tab label="Sync" />
+          <Tab label="Logistica" />
+          <Tab label="Cumplimiento" />
+          <Tab label={`Canales (${channels.length})`} />
+          <Tab label={`Proveedores (${productSuppliers.length})`} />
+          <Tab label={`Taxonomias ext. (${productTaxonomies.length})`} />
         </Tabs>
       </Paper>
 
@@ -705,13 +814,13 @@ export default function ProductDetail() {
             ))}
           </TextField>
           <Autocomplete
-            options={categories}
+            options={categories.filter((c) => !categories.some((o) => o.parent_id === c.id))}
             getOptionLabel={(opt) => opt.name}
             value={categories.find((c) => c.id === editCategoryId) || null}
             onChange={(_, val) => setEditCategoryId(val?.id || '')}
             isOptionEqualToValue={(opt, val) => opt.id === val.id}
             renderInput={(params) => (
-              <TextField {...params} fullWidth label="Categoria" margin="normal" />
+              <TextField {...params} fullWidth label="Categoria (solo nodos hoja)" margin="normal" helperText="Solo se pueden seleccionar categorias sin subcategorias" />
             )}
           />
           <Autocomplete
@@ -724,10 +833,41 @@ export default function ProductDetail() {
               <TextField {...params} fullWidth label="Familia de atributos" margin="normal" helperText="Define los atributos estructurados del producto" />
             )}
           />
-          <TextField fullWidth label="Creado" value={new Date(product.created_at).toLocaleString()} margin="normal" disabled />
-          <TextField fullWidth label="Actualizado" value={new Date(product.updated_at).toLocaleString()} margin="normal" disabled />
+
+          <Divider sx={{ my: 2 }}><Typography variant="caption" color="text.secondary">Identificacion</Typography></Divider>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField fullWidth label="EAN / GTIN" value={editEanGtin} onChange={(e) => setEditEanGtin(e.target.value)} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField fullWidth label="DUN-14 (codigo de caja)" value={editDun14} onChange={(e) => setEditDun14(e.target.value)} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField fullWidth label="Ref. proveedor" value={editSupplierRef} onChange={(e) => setEditSupplierRef(e.target.value)} size="small" />
+            </Grid>
+          </Grid>
+
+          <Divider sx={{ my: 2 }}><Typography variant="caption" color="text.secondary">Nombre y descripciones</Typography></Divider>
+          <TextField fullWidth label="Nombre comercial" value={editName} onChange={(e) => setEditName(e.target.value)} margin="dense" />
+          <TextField fullWidth label="Descripcion corta" value={editShortDescription} onChange={(e) => setEditShortDescription(e.target.value)} margin="dense" multiline rows={2} />
+          <TextField fullWidth label="Descripcion larga" value={editLongDescription} onChange={(e) => setEditLongDescription(e.target.value)} margin="dense" multiline rows={4} />
+
+          <Divider sx={{ my: 2 }}><Typography variant="caption" color="text.secondary">Marketing</Typography></Divider>
+          <TextField fullWidth label="Beneficios clave (uno por linea)" value={editKeyBenefits} onChange={(e) => setEditKeyBenefits(e.target.value)} margin="dense" multiline rows={3} helperText="Cada linea es un beneficio" />
+          <TextField fullWidth label="Argumento de venta / Pitch" value={editSalesPitch} onChange={(e) => setEditSalesPitch(e.target.value)} margin="dense" multiline rows={3} />
+          <TextField fullWidth label="Claims de marketing (uno por linea)" value={editMarketingClaims} onChange={(e) => setEditMarketingClaims(e.target.value)} margin="dense" multiline rows={3} />
+          <TextField fullWidth label="Texto marketplace (JSON: canal→texto)" value={editMarketplaceText} onChange={(e) => setEditMarketplaceText(e.target.value)} margin="dense" multiline rows={3} slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.85rem' } } }} />
+
           <Divider sx={{ my: 2 }} />
-          <Button variant="contained" onClick={handleSave} disabled={saving}>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 6 }}>
+              <TextField fullWidth label="Creado" value={new Date(product.created_at).toLocaleString()} margin="normal" disabled />
+            </Grid>
+            <Grid size={{ xs: 6 }}>
+              <TextField fullWidth label="Actualizado" value={new Date(product.updated_at).toLocaleString()} margin="normal" disabled />
+            </Grid>
+          </Grid>
+          <Button variant="contained" onClick={handleSave} disabled={saving} sx={{ mt: 1 }}>
             {saving ? 'Guardando...' : 'Guardar'}
           </Button>
         </Paper>
@@ -925,7 +1065,7 @@ export default function ProductDetail() {
                         <Typography variant="h6" color="text.secondary">{asset.kind.toUpperCase()}</Typography>
                       </Box>
                     )}
-                    <CardActions>
+                    <CardActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
                       <Tooltip title="Abrir">
                         <IconButton
                           size="small"
@@ -942,9 +1082,23 @@ export default function ProductDetail() {
                           <Delete />
                         </IconButton>
                       </Tooltip>
-                      <Typography variant="caption" noWrap sx={{ flexGrow: 1, ml: 1 }}>
-                        {asset.filename || asset.url}
-                      </Typography>
+                      <TextField
+                        select
+                        size="small"
+                        value={asset.media_type || 'other'}
+                        onChange={async (e) => {
+                          const val = e.target.value as typeof MEDIA_TYPES[number];
+                          try {
+                            await updateMedia(asset.id, { media_type: val });
+                            setMedia((prev) => prev.map((a) => a.id === asset.id ? { ...a, media_type: val } : a));
+                          } catch { /* ignore */ }
+                        }}
+                        sx={{ fontSize: '0.75rem', '& .MuiSelect-select': { py: 0.5, fontSize: '0.75rem' } }}
+                      >
+                        {MEDIA_TYPES.map((mt) => (
+                          <MenuItem key={mt} value={mt}>{MEDIA_TYPE_LABELS[mt]}</MenuItem>
+                        ))}
+                      </TextField>
                     </CardActions>
                   </Card>
                 </Grid>
@@ -1529,6 +1683,589 @@ export default function ProductDetail() {
                       </TableCell>
                       <TableCell>
                         {h.synced_at ? new Date(h.synced_at).toLocaleString('es-ES') : '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
+      )}
+      {tab === 9 && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>Logistica</Typography>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth label="Unidad base" value={editLogistics.base_unit ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, base_unit: e.target.value || null }))} size="small" helperText="pieza, kg, litro..." />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth type="number" label="Uds. por caja" value={editLogistics.box_units ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, box_units: e.target.value ? Number(e.target.value) : null }))} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth type="number" label="Cajas por palet" value={editLogistics.pallet_boxes ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, pallet_boxes: e.target.value ? Number(e.target.value) : null }))} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth type="number" label="Uds. por palet" value={editLogistics.pallet_units ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, pallet_units: e.target.value ? Number(e.target.value) : null }))} size="small" />
+            </Grid>
+          </Grid>
+
+          <Divider sx={{ my: 2 }}><Typography variant="caption" color="text.secondary">Dimensiones por unidad (mm)</Typography></Divider>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth type="number" label="Alto (mm)" value={editLogistics.height_mm ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, height_mm: e.target.value ? Number(e.target.value) : null }))} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth type="number" label="Ancho (mm)" value={editLogistics.width_mm ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, width_mm: e.target.value ? Number(e.target.value) : null }))} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth type="number" label="Profundidad (mm)" value={editLogistics.depth_mm ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, depth_mm: e.target.value ? Number(e.target.value) : null }))} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth type="number" label="Peso bruto (g)" value={editLogistics.weight_gross_g ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, weight_gross_g: e.target.value ? Number(e.target.value) : null }))} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth type="number" label="Peso neto (g)" value={editLogistics.weight_net_g ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, weight_net_g: e.target.value ? Number(e.target.value) : null }))} size="small" />
+            </Grid>
+          </Grid>
+
+          <Divider sx={{ my: 2 }}><Typography variant="caption" color="text.secondary">Embalaje</Typography></Divider>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField fullWidth label="Tipo de embalaje" value={editLogistics.packaging_type ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, packaging_type: e.target.value || null }))} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <FormControlLabel
+                control={<Switch checked={!!editLogistics.stackable} onChange={(e) => setEditLogistics((p) => ({ ...p, stackable: e.target.checked }))} />}
+                label="Apilable"
+              />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <TextField fullWidth label="Condiciones de transporte" value={editLogistics.transport_conditions ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, transport_conditions: e.target.value || null }))} size="small" multiline rows={2} />
+            </Grid>
+          </Grid>
+
+          <Divider sx={{ my: 2 }}><Typography variant="caption" color="text.secondary">ADR (mercancias peligrosas)</Typography></Divider>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12 }}>
+              <FormControlLabel
+                control={<Switch checked={!!editLogistics.adr} onChange={(e) => setEditLogistics((p) => ({ ...p, adr: e.target.checked }))} />}
+                label="Mercancia peligrosa ADR"
+              />
+            </Grid>
+            {editLogistics.adr && (
+              <>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <TextField fullWidth label="Clase ADR" value={editLogistics.adr_class ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, adr_class: e.target.value || null }))} size="small" />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <TextField fullWidth label="Numero UN" value={editLogistics.adr_un_number ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, adr_un_number: e.target.value || null }))} size="small" />
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  <TextField fullWidth label="Detalles ADR" value={editLogistics.adr_details ?? ''} onChange={(e) => setEditLogistics((p) => ({ ...p, adr_details: e.target.value || null }))} size="small" multiline rows={2} />
+                </Grid>
+              </>
+            )}
+          </Grid>
+
+          <Divider sx={{ my: 2 }} />
+          <Button
+            variant="contained"
+            disabled={logisticsSaving}
+            onClick={async () => {
+              if (!sku) return;
+              setLogisticsSaving(true);
+              try {
+                const updated = await updateLogistics(sku, editLogistics);
+                setLogistics(updated);
+                setEditLogistics(updated);
+                setMessage('Logistica guardada');
+              } catch {
+                setErrMsg('Error al guardar logistica');
+              } finally {
+                setLogisticsSaving(false);
+              }
+            }}
+          >
+            {logisticsSaving ? 'Guardando...' : 'Guardar logistica'}
+          </Button>
+        </Paper>
+      )}
+
+      {tab === 10 && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>Cumplimiento legal</Typography>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth label="Pais de origen (ISO 3166)" value={editCompliance.country_of_origin ?? ''} onChange={(e) => setEditCompliance((p) => ({ ...p, country_of_origin: e.target.value || null }))} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth label="Codigo arancelario (HS)" value={editCompliance.hs_code ?? ''} onChange={(e) => setEditCompliance((p) => ({ ...p, hs_code: e.target.value || null }))} size="small" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth type="number" label="Edad minima" value={editCompliance.min_age ?? ''} onChange={(e) => setEditCompliance((p) => ({ ...p, min_age: e.target.value ? Number(e.target.value) : null }))} size="small" />
+            </Grid>
+          </Grid>
+
+          <Divider sx={{ my: 2 }}><Typography variant="caption" color="text.secondary">Certificaciones</Typography></Divider>
+          <TextField
+            fullWidth
+            label="Certificaciones (una por linea: CE, RoHS, REACH, FCC...)"
+            value={(editCompliance.certifications || []).join('\n')}
+            onChange={(e) => setEditCompliance((p) => ({ ...p, certifications: e.target.value.split('\n').map((l) => l.trim()).filter(Boolean) }))}
+            multiline rows={4} size="small"
+          />
+
+          <Divider sx={{ my: 2 }}><Typography variant="caption" color="text.secondary">Documentos</Typography></Divider>
+          <TextField fullWidth label="URL ficha tecnica" value={editCompliance.technical_sheet_url ?? ''} onChange={(e) => setEditCompliance((p) => ({ ...p, technical_sheet_url: e.target.value || null }))} size="small" margin="dense" />
+          <TextField fullWidth label="URL ficha de seguridad" value={editCompliance.safety_sheet_url ?? ''} onChange={(e) => setEditCompliance((p) => ({ ...p, safety_sheet_url: e.target.value || null }))} size="small" margin="dense" />
+
+          <Divider sx={{ my: 2 }}><Typography variant="caption" color="text.secondary">Avisos legales y trazabilidad</Typography></Divider>
+          <TextField fullWidth label="Avisos legales / restricciones" value={editCompliance.legal_warnings ?? ''} onChange={(e) => setEditCompliance((p) => ({ ...p, legal_warnings: e.target.value || null }))} size="small" multiline rows={3} margin="dense" />
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <FormControlLabel control={<Switch checked={!!editCompliance.has_lot_traceability} onChange={(e) => setEditCompliance((p) => ({ ...p, has_lot_traceability: e.target.checked }))} />} label="Trazabilidad por lote" />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <FormControlLabel control={<Switch checked={!!editCompliance.has_expiry_date} onChange={(e) => setEditCompliance((p) => ({ ...p, has_expiry_date: e.target.checked }))} />} label="Fecha de caducidad" />
+            </Grid>
+          </Grid>
+
+          <Divider sx={{ my: 2 }} />
+          <Button
+            variant="contained"
+            disabled={complianceSaving}
+            onClick={async () => {
+              if (!sku) return;
+              setComplianceSaving(true);
+              try {
+                const updated = await updateCompliance(sku, editCompliance);
+                setCompliance(updated);
+                setEditCompliance(updated);
+                setMessage('Cumplimiento guardado');
+              } catch {
+                setErrMsg('Error al guardar cumplimiento');
+              } finally {
+                setComplianceSaving(false);
+              }
+            }}
+          >
+            {complianceSaving ? 'Guardando...' : 'Guardar cumplimiento'}
+          </Button>
+        </Paper>
+      )}
+
+      {tab === 11 && (
+        <Paper sx={{ p: 3 }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="h6">Informacion por canal</Typography>
+          </Box>
+
+          {/* Add new channel form */}
+          <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+            <Typography variant="subtitle2" gutterBottom>Agregar / editar canal</Typography>
+            <Grid container spacing={2} alignItems="flex-end">
+              <Grid size={{ xs: 12, sm: 3 }}>
+                <Autocomplete
+                  options={allChannels.filter((c) => c.active)}
+                  getOptionLabel={(c) => `${c.name} (${c.code})`}
+                  value={allChannels.find((c) => c.id === selectedChannelId) || null}
+                  onChange={(_, val) => setSelectedChannelId(val?.id || '')}
+                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                  renderInput={(params) => <TextField {...params} label="Canal" size="small" />}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <TextField fullWidth label="Nombre en canal" value={editChannel.name ?? ''} onChange={(e) => setEditChannel((p) => ({ ...p, name: e.target.value || null }))} size="small" />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 3 }}>
+                <FormControlLabel control={<Switch checked={editChannel.active !== false} onChange={(e) => setEditChannel((p) => ({ ...p, active: e.target.checked }))} />} label="Activo" />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <TextField fullWidth label="Descripcion en canal" value={editChannel.description ?? ''} onChange={(e) => setEditChannel((p) => ({ ...p, description: e.target.value || null }))} size="small" multiline rows={2} />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField fullWidth label="Paises restringidos (separados por coma)" value={(editChannel.country_restrictions || []).join(', ')} onChange={(e) => setEditChannel((p) => ({ ...p, country_restrictions: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) }))} size="small" />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <Button
+                  variant="contained"
+                  disabled={!selectedChannelId || channelSaving}
+                  onClick={async () => {
+                    if (!sku || !selectedChannelId) return;
+                    setChannelSaving(true);
+                    try {
+                      const updated = await upsertChannel(sku, { ...editChannel, channel_id: selectedChannelId });
+                      setChannels((prev) => {
+                        const idx = prev.findIndex((c) => c.id === updated.id);
+                        return idx >= 0 ? prev.map((c, i) => i === idx ? updated : c) : [...prev, updated];
+                      });
+                      setSelectedChannelId('');
+                      setEditChannel({});
+                      setMessage('Canal guardado');
+                    } catch {
+                      setErrMsg('Error al guardar canal');
+                    } finally {
+                      setChannelSaving(false);
+                    }
+                  }}
+                >
+                  {channelSaving ? 'Guardando...' : 'Guardar canal'}
+                </Button>
+              </Grid>
+            </Grid>
+          </Box>
+
+          {channels.length === 0 ? (
+            <Typography color="text.secondary">Sin canales configurados.</Typography>
+          ) : (
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Canal</TableCell>
+                    <TableCell>Nombre</TableCell>
+                    <TableCell>Activo</TableCell>
+                    <TableCell>Restricciones de pais</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {channels.map((ch) => (
+                    <TableRow key={ch.id} hover>
+                      <TableCell><Chip label={ch.channel?.name || ch.channel_id} size="small" /></TableCell>
+                      <TableCell>{ch.name || '-'}</TableCell>
+                      <TableCell>
+                        <Chip label={ch.active ? 'Activo' : 'Inactivo'} size="small" color={ch.active ? 'success' : 'default'} />
+                      </TableCell>
+                      <TableCell>{(ch.country_restrictions || []).join(', ') || '-'}</TableCell>
+                      <TableCell>
+                        <Tooltip title="Editar">
+                          <IconButton size="small" onClick={() => { setSelectedChannelId(ch.channel_id); setEditChannel(ch); }}>
+                            <Edit fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Eliminar">
+                          <IconButton size="small" color="error" onClick={async () => {
+                            if (!sku) return;
+                            try {
+                              await deleteChannel(sku, ch.id);
+                              setChannels((prev) => prev.filter((c) => c.id !== ch.id));
+                              setMessage('Canal eliminado');
+                            } catch {
+                              setErrMsg('Error al eliminar canal');
+                            }
+                          }}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
+      )}
+
+      {tab === 12 && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>Proveedores vinculados</Typography>
+
+          <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+            <Typography variant="subtitle2" gutterBottom>Vincular proveedor</Typography>
+            <Grid container spacing={2} alignItems="flex-end">
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Autocomplete
+                  options={allSuppliers.filter((s) => s.active)}
+                  getOptionLabel={(s) => `${s.name}${s.code ? ` (${s.code})` : ''}`}
+                  value={allSuppliers.find((s) => s.id === selectedSupplierId) || null}
+                  onChange={(_, val) => setSelectedSupplierId(val?.id || '')}
+                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                  renderInput={(params) => <TextField {...params} label="Proveedor" size="small" />}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Button
+                  variant="contained"
+                  disabled={!selectedSupplierId || supplierSaving}
+                  onClick={async () => {
+                    if (!sku || !selectedSupplierId) return;
+                    setSupplierSaving(true);
+                    try {
+                      const link = await addProductSupplier(sku, { supplier_id: selectedSupplierId });
+                      setProductSuppliers((prev) => [...prev, link]);
+                      setSelectedSupplierId('');
+                      setMessage('Proveedor vinculado');
+                    } catch {
+                      setErrMsg('Error al vincular proveedor (quiza ya esta vinculado)');
+                    } finally {
+                      setSupplierSaving(false);
+                    }
+                  }}
+                >
+                  {supplierSaving ? 'Vinculando...' : 'Vincular'}
+                </Button>
+              </Grid>
+            </Grid>
+          </Box>
+
+          {productSuppliers.length === 0 ? (
+            <Typography color="text.secondary">Sin proveedores vinculados.</Typography>
+          ) : (
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Proveedor</TableCell>
+                    <TableCell>Principal</TableCell>
+                    <TableCell>Ref. proveedor</TableCell>
+                    <TableCell>MOQ</TableCell>
+                    <TableCell>Plazo (dias)</TableCell>
+                    <TableCell>Precio compra</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {productSuppliers.map((ps) => (
+                    <TableRow key={ps.id} hover>
+                      <TableCell>{ps.supplier?.name || ps.supplier_id}</TableCell>
+                      <TableCell>
+                        <Chip label={ps.is_primary ? 'Principal' : 'Alternativo'} size="small" color={ps.is_primary ? 'primary' : 'default'} />
+                      </TableCell>
+                      <TableCell>{ps.supplier_sku || '-'}</TableCell>
+                      <TableCell>{ps.moq ?? '-'}</TableCell>
+                      <TableCell>{ps.lead_time_days ?? '-'}</TableCell>
+                      <TableCell>{ps.purchase_price != null ? `${ps.purchase_price} ${ps.currency || ''}` : '-'}</TableCell>
+                      <TableCell>
+                        <Tooltip title="Editar">
+                          <IconButton size="small" onClick={() => {
+                            setEditingSupplier(ps);
+                            setEditSupplierForm({ ...ps });
+                          }}>
+                            <Edit fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Desvincular">
+                          <IconButton size="small" color="error" onClick={async () => {
+                            if (!sku) return;
+                            try {
+                              await removeProductSupplier(sku, ps.id);
+                              setProductSuppliers((prev) => prev.filter((p) => p.id !== ps.id));
+                              setMessage('Proveedor desvinculado');
+                            } catch {
+                              setErrMsg('Error al desvincular proveedor');
+                            }
+                          }}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
+      )}
+
+      {/* Dialog: editar vinculo proveedor */}
+      <Dialog open={!!editingSupplier} onClose={() => setEditingSupplier(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Editar proveedor vinculado</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            <Typography variant="body2" color="text.secondary">
+              Proveedor: <strong>{editingSupplier?.supplier?.name || editingSupplier?.supplier_id}</strong>
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={editSupplierForm.is_primary ?? false}
+                  onChange={(e) => setEditSupplierForm((p) => ({ ...p, is_primary: e.target.checked }))}
+                />
+              }
+              label="Proveedor principal"
+            />
+            <TextField
+              label="Referencia del proveedor (SKU proveedor)"
+              value={editSupplierForm.supplier_sku ?? ''}
+              onChange={(e) => setEditSupplierForm((p) => ({ ...p, supplier_sku: e.target.value || null }))}
+              size="small"
+            />
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 6 }}>
+                <TextField
+                  fullWidth
+                  label="MOQ (minimo pedido)"
+                  type="number"
+                  value={editSupplierForm.moq ?? ''}
+                  onChange={(e) => setEditSupplierForm((p) => ({ ...p, moq: e.target.value ? Number(e.target.value) : null }))}
+                  size="small"
+                />
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Plazo entrega (dias)"
+                  type="number"
+                  value={editSupplierForm.lead_time_days ?? ''}
+                  onChange={(e) => setEditSupplierForm((p) => ({ ...p, lead_time_days: e.target.value ? Number(e.target.value) : null }))}
+                  size="small"
+                />
+              </Grid>
+              <Grid size={{ xs: 8 }}>
+                <TextField
+                  fullWidth
+                  label="Precio de compra"
+                  type="number"
+                  value={editSupplierForm.purchase_price ?? ''}
+                  onChange={(e) => setEditSupplierForm((p) => ({ ...p, purchase_price: e.target.value ? Number(e.target.value) : null }))}
+                  size="small"
+                  inputProps={{ step: '0.01' }}
+                />
+              </Grid>
+              <Grid size={{ xs: 4 }}>
+                <TextField
+                  fullWidth
+                  label="Divisa"
+                  value={editSupplierForm.currency ?? ''}
+                  onChange={(e) => setEditSupplierForm((p) => ({ ...p, currency: e.target.value || null }))}
+                  size="small"
+                  inputProps={{ maxLength: 3 }}
+                  placeholder="EUR"
+                />
+              </Grid>
+            </Grid>
+            <TextField
+              label="Notas"
+              value={editSupplierForm.notes ?? ''}
+              onChange={(e) => setEditSupplierForm((p) => ({ ...p, notes: e.target.value || null }))}
+              size="small"
+              multiline
+              rows={2}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditingSupplier(null)}>Cancelar</Button>
+          <Button
+            variant="contained"
+            disabled={editSupplierSaving}
+            onClick={async () => {
+              if (!sku || !editingSupplier) return;
+              setEditSupplierSaving(true);
+              try {
+                const updated = await updateProductSupplier(sku, editingSupplier.id, editSupplierForm);
+                setProductSuppliers((prev) => prev.map((ps) => ps.id === updated.id ? updated : ps));
+                setEditingSupplier(null);
+                setMessage('Proveedor actualizado');
+              } catch {
+                setErrMsg('Error al actualizar proveedor');
+              } finally {
+                setEditSupplierSaving(false);
+              }
+            }}
+          >
+            {editSupplierSaving ? 'Guardando...' : 'Guardar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {tab === 13 && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>Taxonomias externas</Typography>
+
+          <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+            <Typography variant="subtitle2" gutterBottom>Mapear a taxonomia externa</Typography>
+            <Grid container spacing={2} alignItems="flex-end">
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Autocomplete
+                  options={extTaxonomies}
+                  getOptionLabel={(t) => `${t.name} (${t.provider})`}
+                  value={extTaxonomies.find((t) => t.id === selectedTaxonomyId) || null}
+                  onChange={(_, val) => setSelectedTaxonomyId(val?.id || '')}
+                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                  renderInput={(params) => <TextField {...params} label="Taxonomia" size="small" />}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 3 }}>
+                <TextField fullWidth label="Codigo de nodo" value={editTaxonomyNodeCode} onChange={(e) => setEditTaxonomyNodeCode(e.target.value)} size="small" />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 3 }}>
+                <TextField fullWidth label="Nombre de nodo" value={editTaxonomyNodeName} onChange={(e) => setEditTaxonomyNodeName(e.target.value)} size="small" />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 2 }}>
+                <Button
+                  variant="contained"
+                  disabled={!selectedTaxonomyId || taxonomySaving}
+                  onClick={async () => {
+                    if (!sku || !selectedTaxonomyId) return;
+                    setTaxonomySaving(true);
+                    try {
+                      const mapping = await upsertProductTaxonomy(sku, {
+                        taxonomy_id: selectedTaxonomyId,
+                        node_code: editTaxonomyNodeCode || undefined,
+                        node_name: editTaxonomyNodeName || undefined,
+                      });
+                      setProductTaxonomies((prev) => {
+                        const idx = prev.findIndex((t) => t.id === mapping.id);
+                        return idx >= 0 ? prev.map((t, i) => i === idx ? mapping : t) : [...prev, mapping];
+                      });
+                      setSelectedTaxonomyId('');
+                      setEditTaxonomyNodeCode('');
+                      setEditTaxonomyNodeName('');
+                      setMessage('Mapeo de taxonomia guardado');
+                    } catch {
+                      setErrMsg('Error al guardar mapeo');
+                    } finally {
+                      setTaxonomySaving(false);
+                    }
+                  }}
+                >
+                  {taxonomySaving ? 'Guardando...' : 'Mapear'}
+                </Button>
+              </Grid>
+            </Grid>
+          </Box>
+
+          {productTaxonomies.length === 0 ? (
+            <Typography color="text.secondary">Sin taxonomias externas mapeadas.</Typography>
+          ) : (
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Taxonomia</TableCell>
+                    <TableCell>Proveedor</TableCell>
+                    <TableCell>Codigo nodo</TableCell>
+                    <TableCell>Nombre nodo</TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {productTaxonomies.map((pt) => (
+                    <TableRow key={pt.id} hover>
+                      <TableCell>{pt.taxonomy?.name || pt.taxonomy_id}</TableCell>
+                      <TableCell>{pt.taxonomy?.provider || '-'}</TableCell>
+                      <TableCell><Typography variant="caption" fontFamily="monospace">{pt.node_code || '-'}</Typography></TableCell>
+                      <TableCell>{pt.node_name || '-'}</TableCell>
+                      <TableCell>
+                        <Tooltip title="Eliminar mapeo">
+                          <IconButton size="small" color="error" onClick={async () => {
+                            if (!sku) return;
+                            try {
+                              await removeProductTaxonomy(sku, pt.id);
+                              setProductTaxonomies((prev) => prev.filter((t) => t.id !== pt.id));
+                              setMessage('Mapeo eliminado');
+                            } catch {
+                              setErrMsg('Error al eliminar mapeo');
+                            }
+                          }}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   ))}

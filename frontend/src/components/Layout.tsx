@@ -28,6 +28,8 @@ import {
   Category as AttributeIcon,
   SyncAlt as SyncIcon,
   Storefront as BrandIcon,
+  LocalShipping as SupplierIcon,
+  Hub as ChannelIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -37,6 +39,8 @@ const navItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
   { text: 'Productos', icon: <InventoryIcon />, path: '/products' },
   { text: 'Marcas', icon: <BrandIcon />, path: '/brands' },
+  { text: 'Proveedores', icon: <SupplierIcon />, path: '/suppliers' },
+  { text: 'Canales', icon: <ChannelIcon />, path: '/channels' },
   { text: 'Taxonomia', icon: <TreeIcon />, path: '/categories' },
   { text: 'Media', icon: <MediaIcon />, path: '/media' },
   { text: 'Calidad', icon: <QualityIcon />, path: '/quality' },

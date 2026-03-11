@@ -22,7 +22,7 @@ python -m pytest tests/ -v
 # Ejecutar un test concreto
 python -m pytest tests/test_products.py::test_create_product -v
 
-# Migraciones Alembic
+# Migraciones Alembic (nota: la autogeneración puede fallar por FKs cíclicas; para SQLite dev basta con ALTER TABLE manual o recrear la BD)
 python -m alembic revision --autogenerate -m "descripcion"
 python -m alembic upgrade head
 python -m alembic downgrade -1
@@ -58,6 +58,7 @@ backend/app/
 ├── models/         # SQLAlchemy 2.x ORM (Base + mixins en base.py)
 ├── schemas/        # Pydantic v2 (separados por entidad)
 ├── services/       # Lógica de negocio (entre API y modelos)
+├── connectors/     # Conectores de sincronización externa (CSV, HTTP, JSON, Shopify, Amazon, WooCommerce)
 └── api/v1/         # Routers FastAPI agrupados en router.py
 ```
 
@@ -71,9 +72,28 @@ backend/app/
 - El admin `admin@pim.local / admin` se crea automáticamente en el lifespan si no existe
 - La BD se crea automáticamente al arrancar (via `Base.metadata.create_all`)
 - Audit log en cada `create_product`, `update_product` y `transition_product`
-- Transiciones de estado válidas: `draft→ready`, `ready→draft`, `ready→retired`, `retired→draft`
+- Pydantic v2: usar `ConfigDict(from_attributes=True)`, NO la clase `Config` deprecada
+- Al usar `selectinload` para relaciones eager-loaded después de `db.flush()`, re-query en vez de `db.refresh()` para evitar errores `MissingGreenlet`
+
+**Transiciones de estado de productos:**
+```
+draft → in_review → approved → ready → retired
+       ↖ reject ↙          ↖──────────────↙
+                              (volver a draft)
+```
 
 **Auth:** JWT con `python-jose`. Los admins (`role="admin"`) bypass todos los scope checks en `require_scopes()`.
+
+**Conectores (sincronización):**
+- `BaseConnector` (abc) con método `async run(db, filters) → ConnectorResult`
+- `ConnectorResult` incluye `sku_results: list[SkuResult]` para tracking per-producto
+- Registro en `connectors/registry.py` — añadir nuevos conectores ahí
+- Semáforo por canal en `connectors/concurrency.py` para limitar ejecución paralela
+
+**Scheduler (background):**
+- Loop cada 30-60s en `services/scheduler.py`, arrancado en el lifespan de `main.py`
+- Procesa `SyncSchedule` con expresiones cron (via `croniter`)
+- Reintentos automáticos con backoff exponencial: `5^retry_count` segundos
 
 ### Frontend
 
@@ -82,27 +102,78 @@ frontend/src/
 ├── api/            # Funciones axios por entidad (client.ts tiene interceptor JWT + auto-refresh)
 ├── contexts/       # AuthContext (estado de sesión global)
 ├── pages/          # Páginas por ruta
-├── components/     # Layout (sidebar+topbar), ProtectedRoute
+├── components/     # Layout (sidebar+topbar), ProtectedRoute, ImportDialog, ExportDialog
 └── types/          # Tipos TypeScript espejo de los schemas Pydantic
 ```
 
-**Rutas:** `/` Dashboard, `/products` lista, `/products/:sku` detalle (tabs General/Atributos/I18N/SEO), `/categories` árbol taxonomía.
+**Rutas principales:**
+- `/` — Dashboard
+- `/products` — Lista con vistas guardadas, filtros avanzados (fecha, media, i18n)
+- `/products/:sku` — Detalle (tabs: General, Atributos, I18N, SEO, Media, Calidad, Comentarios, Historial)
+- `/categories` — Árbol de taxonomía
+- `/media` — Biblioteca multimedia
+- `/quality` — Dashboard de calidad + Admin de reglas (simulación what-if)
+- `/i18n` — Traducciones pendientes
+- `/sync` — Dashboard de sincronización + Schedules
+- `/brands` — Gestión de marcas
+- `/suppliers` — Gestión de proveedores
+- `/channels` — Gestión de canales
 
 ### Base de datos (SQLite)
 
 Fichero: `backend/pim.db` (se crea al arrancar). Tablas principales:
-- `users` — autenticación y RBAC
+
+**Core:**
+- `users` — autenticación y RBAC (roles: admin, editor, viewer)
+- `products` — SKU como PK (text), atributos/seo en JSON, FK a categories y families
 - `categories` — árbol con `parent_id` self-referencial
-- `products` — SKU como PK (text), atributos en JSON, FK a categories
 - `product_i18n` — traducciones (sku + locale, unique)
 - `media_assets` — multimedia vinculada a SKUs
-- `audits` — log de cambios (resource, actor, before/after JSON)
-- `sync_jobs` — estado de sincronizaciones externas
+- `audits` — log de cambios inmutable (resource, actor, before/after JSON)
+- `product_versions` — snapshots completos del producto en cada cambio
+
+**Calidad:**
+- `quality_rule_sets` — conjuntos de reglas (solo uno activo a la vez)
+- `quality_rules` — reglas individuales (dimension, weight, min_score, scope_category_id)
+
+**Colaboración:**
+- `product_comments` — comentarios por SKU con `parent_id` (hilos), `tags` (JSON array), `mentions`
+
+**Sincronización:**
+- `sync_jobs` — trabajos de sync (channel, status, filters, metrics, max_retries, retry_count)
+- `product_sync_statuses` — estado per-SKU per-canal (synced/error/pending)
+- `sync_schedules` — programación cron (channel, cron_expression, enabled, next_run_at)
+
+**Catálogo extendido:**
+- `brands` — maestro de marcas
+- `suppliers` — proveedores
+- `channels` — canales de venta
+- `product_channels` — asignación producto-canal
+- `product_logistics` — datos logísticos por producto
+- `product_compliance` — datos de conformidad
+- `attribute_families` / `attribute_definitions` — familias y definiciones de atributos
+- `external_taxonomies` — taxonomías externas
+
+**Vistas y configuración:**
+- `saved_views` — filtros guardados por usuario (is_default, is_public, resource genérico)
+- `mapping_templates` — plantillas de mapeo para importación
 
 ### Tests
 
-Los tests usan **SQLite en memoria** (`aiosqlite`), sin necesidad de PostgreSQL ni de levantar servicios externos. El `conftest.py` recrea las tablas en cada test y sobreescribe la dependency `get_db`.
+146+ tests en 15 ficheros. Usan **SQLite en memoria** (`aiosqlite`), sin servicios externos.
+
+El `conftest.py` recrea las tablas en cada test, sobreescribe `get_db`, y configura los session factories para tareas background:
+```python
+import app.services.import_service as _import_svc
+_import_svc._session_factory = TestSessionLocal
+import app.services.sync_service as _sync_svc
+_sync_svc._session_factory = TestSessionLocal
+```
+
+**Ficheros de test:** `test_auth`, `test_products`, `test_categories`, `test_ingest`, `test_media`, `test_quality`, `test_i18n`, `test_product_versions`, `test_quality_rules`, `test_sync`, `test_saved_views`, `test_comments`, `test_export`, `test_import`.
 
 ## Variables de entorno (backend/.env)
 
 Copiar `backend/.env.example` a `backend/.env`. Por defecto usa SQLite local, no requiere configuración adicional para desarrollo.
+
+Variables principales: `DATABASE_URL`, `SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `CORS_ORIGINS`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_MINUTES`.

@@ -15,6 +15,8 @@ import AttributeFamilies from './pages/Attributes/AttributeFamilies';
 import SyncDashboard from './pages/Sync/SyncDashboard';
 import QualityRulesAdmin from './pages/Quality/QualityRulesAdmin';
 import BrandManager from './pages/Brands/BrandManager';
+import SupplierManager from './pages/Suppliers/SupplierManager';
+import ChannelManager from './pages/Channels/ChannelManager';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +48,8 @@ export default function App() {
               <Route path="/i18n" element={<I18nMissing />} />
               <Route path="/attributes" element={<AttributeFamilies />} />
               <Route path="/brands" element={<BrandManager />} />
+              <Route path="/suppliers" element={<SupplierManager />} />
+              <Route path="/channels" element={<ChannelManager />} />
               <Route path="/sync" element={<SyncDashboard />} />
             </Route>
           </Routes>

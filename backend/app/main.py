@@ -32,6 +32,12 @@ from app.models import (  # noqa: F401
     saved_view,
     product_comment,
     brand,
+    product_logistics,
+    product_compliance,
+    channel,
+    product_channel,
+    supplier,
+    external_taxonomy,
 )
 
 UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
