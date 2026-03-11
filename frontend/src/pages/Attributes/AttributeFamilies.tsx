@@ -18,12 +18,16 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { Add, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { Add, Delete, Edit, ExpandMore, ExpandLess } from '@mui/icons-material';
 import {
   listFamilies,
   createFamily,
   listDefinitions,
   addDefinition,
+  updateFamily,
+  deleteFamily,
+  updateDefinition,
+  deleteDefinition,
 } from '../../api/attributes';
 import type {
   AttributeFamily,
@@ -59,6 +63,24 @@ export default function AttributeFamilies() {
     code: '', label: '', type: 'string', required: false,
   });
   const [newDefOptions, setNewDefOptions] = useState('');
+
+  // Dialog editar familia
+  const [editFamilyTarget, setEditFamilyTarget] = useState<AttributeFamily | null>(null);
+  const [editFamName, setEditFamName] = useState('');
+  const [editFamDesc, setEditFamDesc] = useState('');
+  const [editFamCatId, setEditFamCatId] = useState('');
+
+  // Dialog eliminar familia
+  const [deleteFamilyTarget, setDeleteFamilyTarget] = useState<AttributeFamily | null>(null);
+
+  // Dialog editar definicion
+  const [editDefTarget, setEditDefTarget] = useState<{ familyId: string; def: AttributeDefinition } | null>(null);
+  const [editDefLabel, setEditDefLabel] = useState('');
+  const [editDefRequired, setEditDefRequired] = useState(false);
+  const [editDefOptions, setEditDefOptions] = useState('');
+
+  // Dialog eliminar definicion
+  const [deleteDefTarget, setDeleteDefTarget] = useState<{ familyId: string; def: AttributeDefinition } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -121,6 +143,92 @@ export default function AttributeFamilies() {
     }
   };
 
+  const openEditFamily = (fam: AttributeFamily) => {
+    setEditFamilyTarget(fam);
+    setEditFamName(fam.name);
+    setEditFamDesc(fam.description || '');
+    setEditFamCatId(fam.category_id || '');
+    setErrMsg('');
+  };
+
+  const handleEditFamily = async () => {
+    if (!editFamilyTarget) return;
+    setErrMsg('');
+    try {
+      await updateFamily(editFamilyTarget.id, {
+        name: editFamName,
+        description: editFamDesc || undefined,
+        category_id: editFamCatId || undefined,
+      });
+      setEditFamilyTarget(null);
+      setMessage('Familia actualizada');
+      await refresh();
+    } catch {
+      setErrMsg('Error al actualizar la familia');
+    }
+  };
+
+  const handleDeleteFamily = async () => {
+    if (!deleteFamilyTarget) return;
+    setErrMsg('');
+    try {
+      await deleteFamily(deleteFamilyTarget.id);
+      setDeleteFamilyTarget(null);
+      setMessage('Familia eliminada');
+      await refresh();
+    } catch {
+      setErrMsg('Error al eliminar la familia');
+    }
+  };
+
+  const openEditDef = (familyId: string, def: AttributeDefinition) => {
+    setEditDefTarget({ familyId, def });
+    setEditDefLabel(def.label);
+    setEditDefRequired(def.required);
+    let opts = '';
+    if (def.options_json) {
+      try { opts = JSON.parse(def.options_json).join(', '); } catch { /* ignore */ }
+    }
+    setEditDefOptions(opts);
+    setErrMsg('');
+  };
+
+  const handleEditDef = async () => {
+    if (!editDefTarget) return;
+    setErrMsg('');
+    try {
+      const data: Partial<AttributeDefinitionCreate> = {
+        label: editDefLabel,
+        required: editDefRequired,
+      };
+      if (editDefTarget.def.type === 'enum' && editDefOptions.trim()) {
+        const opts = editDefOptions.split(',').map((o) => o.trim()).filter(Boolean);
+        data.options_json = JSON.stringify(opts);
+      }
+      await updateDefinition(editDefTarget.familyId, editDefTarget.def.id, data);
+      const defs = await listDefinitions(editDefTarget.familyId);
+      setDefinitions((prev) => ({ ...prev, [editDefTarget.familyId]: defs }));
+      setEditDefTarget(null);
+      setMessage('Atributo actualizado');
+    } catch {
+      setErrMsg('Error al actualizar el atributo');
+    }
+  };
+
+  const handleDeleteDef = async () => {
+    if (!deleteDefTarget) return;
+    setErrMsg('');
+    try {
+      await deleteDefinition(deleteDefTarget.familyId, deleteDefTarget.def.id);
+      const defs = await listDefinitions(deleteDefTarget.familyId);
+      setDefinitions((prev) => ({ ...prev, [deleteDefTarget.familyId]: defs }));
+      setDeleteDefTarget(null);
+      setMessage('Atributo eliminado');
+    } catch {
+      setErrMsg('Error al eliminar el atributo');
+    }
+  };
+
   const getCategoryName = (id: string | null) => {
     if (!id) return null;
     return categories.find((c) => c.id === id)?.name || id;
@@ -165,9 +273,26 @@ export default function AttributeFamilies() {
                     <Chip label={getCategoryName(fam.category_id)} size="small" color="info" variant="outlined" />
                   )}
                 </Box>
-                <IconButton size="small">
-                  {isExpanded ? <ExpandLess /> : <ExpandMore />}
-                </IconButton>
+                <Box display="flex" alignItems="center" gap={0.5}>
+                  <IconButton
+                    size="small"
+                    title="Editar familia"
+                    onClick={(e) => { e.stopPropagation(); openEditFamily(fam); }}
+                  >
+                    <Edit fontSize="small" />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    title="Eliminar familia"
+                    onClick={(e) => { e.stopPropagation(); setDeleteFamilyTarget(fam); }}
+                  >
+                    <Delete fontSize="small" />
+                  </IconButton>
+                  <IconButton size="small">
+                    {isExpanded ? <ExpandLess /> : <ExpandMore />}
+                  </IconButton>
+                </Box>
               </Box>
 
               <Collapse in={isExpanded}>
@@ -192,6 +317,7 @@ export default function AttributeFamilies() {
                           <th><Typography variant="caption" fontWeight="bold">Tipo</Typography></th>
                           <th><Typography variant="caption" fontWeight="bold">Obligatorio</Typography></th>
                           <th><Typography variant="caption" fontWeight="bold">Opciones</Typography></th>
+                          <th></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -211,6 +337,14 @@ export default function AttributeFamilies() {
                                   ? options.map((o) => <Chip key={o} label={o} size="small" variant="outlined" sx={{ mr: 0.5, mb: 0.5 }} />)
                                   : <Typography variant="caption" color="text.secondary">-</Typography>
                                 }
+                              </td>
+                              <td>
+                                <IconButton size="small" title="Editar" onClick={() => openEditDef(fam.id, d)}>
+                                  <Edit fontSize="small" />
+                                </IconButton>
+                                <IconButton size="small" color="error" title="Eliminar" onClick={() => setDeleteDefTarget({ familyId: fam.id, def: d })}>
+                                  <Delete fontSize="small" />
+                                </IconButton>
                               </td>
                             </tr>
                           );
@@ -270,6 +404,98 @@ export default function AttributeFamilies() {
           <Button variant="contained" onClick={handleCreateFamily} disabled={!newFamily.code.trim() || !newFamily.name.trim()}>
             Crear
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog editar familia */}
+      <Dialog open={editFamilyTarget !== null} onClose={() => setEditFamilyTarget(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Editar familia</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth label="Nombre" margin="normal" size="small"
+            value={editFamName}
+            onChange={(e) => setEditFamName(e.target.value)}
+          />
+          <TextField
+            fullWidth label="Descripcion" margin="normal" size="small" multiline rows={2}
+            value={editFamDesc}
+            onChange={(e) => setEditFamDesc(e.target.value)}
+          />
+          <TextField
+            fullWidth label="Categoria asociada (opcional)" margin="normal" size="small" select
+            value={editFamCatId}
+            onChange={(e) => setEditFamCatId(e.target.value)}
+          >
+            <MenuItem value="">Ninguna</MenuItem>
+            {categories.map((c) => (
+              <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+            ))}
+          </TextField>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditFamilyTarget(null)}>Cancelar</Button>
+          <Button variant="contained" onClick={handleEditFamily} disabled={!editFamName.trim()}>Guardar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog confirmar eliminar familia */}
+      <Dialog open={deleteFamilyTarget !== null} onClose={() => setDeleteFamilyTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Eliminar familia</DialogTitle>
+        <DialogContent>
+          <Typography>
+            ¿Eliminar la familia <strong>{deleteFamilyTarget?.name}</strong>? Se eliminaran tambien todas sus definiciones. Esta accion no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteFamilyTarget(null)}>Cancelar</Button>
+          <Button variant="contained" color="error" onClick={handleDeleteFamily}>Eliminar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog editar definicion */}
+      <Dialog open={editDefTarget !== null} onClose={() => setEditDefTarget(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Editar atributo — {editDefTarget?.def.code}</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth label="Etiqueta" margin="normal" size="small"
+            value={editDefLabel}
+            onChange={(e) => setEditDefLabel(e.target.value)}
+          />
+          {editDefTarget?.def.type === 'enum' && (
+            <TextField
+              fullWidth label="Opciones (separadas por coma)" margin="normal" size="small"
+              value={editDefOptions}
+              onChange={(e) => setEditDefOptions(e.target.value)}
+            />
+          )}
+          <FormControlLabel
+            control={
+              <Switch
+                checked={editDefRequired}
+                onChange={(e) => setEditDefRequired(e.target.checked)}
+              />
+            }
+            label="Obligatorio"
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditDefTarget(null)}>Cancelar</Button>
+          <Button variant="contained" onClick={handleEditDef} disabled={!editDefLabel.trim()}>Guardar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog confirmar eliminar definicion */}
+      <Dialog open={deleteDefTarget !== null} onClose={() => setDeleteDefTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Eliminar atributo</DialogTitle>
+        <DialogContent>
+          <Typography>
+            ¿Eliminar el atributo <strong>{deleteDefTarget?.def.label}</strong> ({deleteDefTarget?.def.code})?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDefTarget(null)}>Cancelar</Button>
+          <Button variant="contained" color="error" onClick={handleDeleteDef}>Eliminar</Button>
         </DialogActions>
       </Dialog>
 

@@ -55,6 +55,17 @@ export interface QualityRuleSetCreate {
   rules?: QualityRuleCreate[];
 }
 
+export interface QualityRuleSetUpdate {
+  name?: string;
+  description?: string | null;
+}
+
+export interface QualityRuleUpdate {
+  weight?: number;
+  min_score?: number;
+  required_status?: string | null;
+}
+
 export interface SimulationItem {
   sku: string;
   status: string;

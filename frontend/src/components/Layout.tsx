@@ -27,6 +27,7 @@ import {
   Translate as I18nIcon,
   Category as AttributeIcon,
   SyncAlt as SyncIcon,
+  Storefront as BrandIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -35,6 +36,7 @@ const DRAWER_WIDTH = 240;
 const navItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
   { text: 'Productos', icon: <InventoryIcon />, path: '/products' },
+  { text: 'Marcas', icon: <BrandIcon />, path: '/brands' },
   { text: 'Taxonomia', icon: <TreeIcon />, path: '/categories' },
   { text: 'Media', icon: <MediaIcon />, path: '/media' },
   { text: 'Calidad', icon: <QualityIcon />, path: '/quality' },

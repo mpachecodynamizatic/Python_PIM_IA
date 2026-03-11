@@ -51,3 +51,23 @@ export async function addDefinition(familyId: string, data: AttributeDefinitionC
   const response = await client.post<AttributeDefinition>(`/attributes/families/${familyId}/definitions`, data);
   return response.data;
 }
+
+export async function updateFamily(familyId: string, data: Partial<AttributeFamilyCreate>): Promise<AttributeFamily> {
+  const response = await client.patch<AttributeFamily>(`/attributes/families/${familyId}`, data);
+  return response.data;
+}
+
+export async function deleteFamily(familyId: string): Promise<void> {
+  await client.delete(`/attributes/families/${familyId}`);
+}
+
+export async function updateDefinition(
+  familyId: string, defId: string, data: Partial<AttributeDefinitionCreate>,
+): Promise<AttributeDefinition> {
+  const response = await client.patch<AttributeDefinition>(`/attributes/families/${familyId}/definitions/${defId}`, data);
+  return response.data;
+}
+
+export async function deleteDefinition(familyId: string, defId: string): Promise<void> {
+  await client.delete(`/attributes/families/${familyId}/definitions/${defId}`);
+}

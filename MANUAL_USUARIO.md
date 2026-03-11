@@ -32,8 +32,8 @@ PIM es una aplicacion de gestion de informacion de productos (Product Informatio
 - **Traducciones** multi-idioma por producto
 - **Scoring de calidad** automatico sobre 6 dimensiones con reglas personalizables y simulacion what-if
 - **Versionado completo** con historial, comparacion, restauracion y comentarios
-- **Comentarios colaborativos** por producto con hilos de respuestas
-- **Busqueda avanzada** con filtros de fecha, media, traducciones y vistas guardadas
+- **Comentarios colaborativos** por producto con hilos de respuestas, edicion, etiquetas y filtros por autor/fecha
+- **Busqueda avanzada** con filtros de fecha, media, traducciones y vistas guardadas compartibles, exportables e importables
 - **Flujo de estados** configurable (borrador, en revision, aprobado, publicado, retirado)
 - **Importacion masiva** desde Excel/CSV con plantillas de mapeo
 - **Sincronizacion** a canales externos
@@ -177,15 +177,28 @@ En la parte superior del listado se muestra una barra de **vistas guardadas**:
 
 - Cada vista aparece como un chip clicable con su nombre
 - La vista marcada como **predeterminada** muestra un icono de estrella y se aplica automaticamente al entrar en la pantalla
+- Las vistas **publicas** (compartidas con el equipo) muestran un icono de globo junto al nombre
 - Clic en un chip para aplicar los filtros guardados de esa vista
-- Boton de eliminar (X) en cada chip para borrar la vista
+- Boton de eliminar (X) en cada chip para borrar la vista (solo el propietario puede eliminarla)
 
 **Guardar una vista:**
 1. Configurar los filtros deseados
 2. Pulsar **Guardar vista**
 3. Introducir nombre y descripcion opcional
-4. Activar "Vista predeterminada" si se desea que se aplique al entrar
-5. Pulsar **Guardar**
+4. Activar **Vista predeterminada** si se desea que se aplique al entrar
+5. Activar **Vista pública (visible para todos los usuarios)** si quieres compartirla con el equipo
+6. Pulsar **Guardar**
+
+**Importar una vista:**
+1. Pulsar el icono de importar (flecha arriba) en la barra de vistas
+2. Seleccionar un fichero `.json` exportado previamente
+3. La vista se importa y aparece en la barra
+
+**Exportar una vista:**
+1. Aplicar una vista guardada (chip activo)
+2. Pulsar el icono de exportar (estrella) que aparece en la barra de filtros
+3. Se descarga un fichero `vista-<nombre>.json` con la definicion de la vista
+4. Ese fichero puede importarse en otro entorno o compartirse con otros usuarios
 
 #### Busqueda y filtrado
 
@@ -368,16 +381,34 @@ Seccion de discusion general sobre el producto entre los miembros del equipo.
 **Escribir un comentario:**
 1. Escribir el texto en el campo de entrada
 2. Enviar con el icono de enviar o pulsando **Enter** (Shift+Enter para nueva linea)
+3. Opcionalmente, rellenar el campo de **etiquetas** (separadas por coma) antes de enviar — por ejemplo: `pendiente revision, aprobado, urgente`
 
 **Comentarios existentes:**
 - Cada comentario muestra el **autor**, la **fecha** y el **cuerpo** del mensaje
+- Si el comentario tiene **etiquetas**, se muestran como chips de color debajo del texto
+- Si el comentario fue editado, se indica con la nota *(editado)* junto a la fecha
 - Boton de **Responder** (icono de flecha) para crear un hilo de respuestas
+- Boton de **Editar** (icono de lapiz) — solo el autor puede editar el cuerpo y las etiquetas
 - Boton de **Eliminar** (papelera) — solo el autor del comentario o un administrador puede eliminarlo
+
+**Editar un comentario:**
+1. Clic en el icono de lapiz del comentario
+2. Modificar el texto y/o las etiquetas en los campos que aparecen
+3. Confirmar con el icono de check (✓), o cancelar con la X
 
 **Hilos de respuestas:**
 - Si un comentario tiene respuestas, se muestra un boton "Ver N respuestas"
 - Clic para expandir/colapsar las respuestas, que aparecen indentadas con un borde izquierdo
 - Para responder a un comentario: clic en el icono de **Responder**, escribir el texto y enviar
+
+**Filtrar comentarios:**
+1. Clic en el icono de **filtro** (embudo) en la cabecera de la seccion
+2. Se despliega el panel de filtros con los campos:
+   - **ID de autor:** UUID del usuario para ver solo sus comentarios
+   - **Etiqueta:** Nombre de etiqueta para filtrar por tag
+   - **Desde / Hasta:** Rango de fechas de creacion
+3. Pulsar **Aplicar** para filtrar
+4. Pulsar **Limpiar** para volver al listado completo
 
 ### Pestana: Historial
 
@@ -841,7 +872,7 @@ GET /api/v1/quality-rules/simulate/{rule_set_id}?page=1&size=20
 
 ### Vistas guardadas
 
-Los usuarios pueden guardar configuraciones de filtro personalizadas:
+Los usuarios pueden guardar configuraciones de filtro personalizadas. Las vistas pueden ser privadas (solo visibles por el propietario) o **publicas** (visibles por todos los usuarios del equipo).
 
 **Guardar vista:**
 ```
@@ -850,14 +881,43 @@ POST /api/v1/views/products
   "name": "Borradores sin media",
   "description": "Productos en borrador que necesitan imagenes",
   "filters": { "status": "draft" },
-  "is_default": false
+  "is_default": false,
+  "is_public": false
 }
 ```
 
-**Listar mis vistas:**
+**Listar vistas (propias + publicas):**
 ```
 GET /api/v1/views/products
 ```
+
+**Exportar una vista (definicion portatil):**
+```
+GET /api/v1/views/products/{id}/export
+```
+Devuelve un JSON sin `id` ni `user_id`, apto para importar en otro entorno.
+
+**Importar una vista:**
+```
+POST /api/v1/views/products/import
+{
+  "resource": "products",
+  "name": "Borradores sin media",
+  "filters": { "status": "draft" },
+  "is_default": false,
+  "is_public": false
+}
+```
+
+**Vistas para otros recursos:**
+El sistema de vistas es generico. Se puede usar el mismo patron para cualquier recurso:
+```
+GET  /api/v1/views/{resource}
+POST /api/v1/views/{resource}
+GET  /api/v1/views/{resource}/{id}/export
+POST /api/v1/views/{resource}/import
+```
+Donde `{resource}` puede ser `products`, `media`, `quality`, `i18n`, etc.
 
 ---
 
@@ -914,8 +974,9 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh \
 | GET | `/products/{sku}/versions` | Historial de versiones |
 | POST | `/products/{sku}/versions/{id}/restore` | Restaurar version |
 | POST | `/products/{sku}/versions/retention` | Aplicar retencion |
-| GET | `/products/{sku}/comments` | Comentarios del producto (top-level) |
-| POST | `/products/{sku}/comments` | Anadir comentario (con `parent_id` opcional para respuestas) |
+| GET | `/products/{sku}/comments` | Comentarios del producto (filtros: `author_id`, `tag`, `since`, `until`) |
+| POST | `/products/{sku}/comments` | Anadir comentario (con `parent_id` y `tags` opcionales) |
+| PATCH | `/products/{sku}/comments/{id}` | Editar comentario — solo autor (`body`, `tags`) |
 | GET | `/products/{sku}/comments/{id}/replies` | Respuestas a un comentario |
 | DELETE | `/products/{sku}/comments/{id}` | Eliminar comentario |
 | GET | `/products/{sku}/versions/{id}/comments` | Comentarios de version |
@@ -1005,11 +1066,13 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh \
 #### Vistas guardadas
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
-| GET | `/views/products` | Mis vistas guardadas |
-| POST | `/views/products` | Crear vista |
-| GET | `/views/products/{id}` | Obtener vista |
-| PATCH | `/views/products/{id}` | Actualizar vista |
-| DELETE | `/views/products/{id}` | Eliminar vista |
+| GET | `/views/{resource}` | Mis vistas + vistas publicas para ese recurso |
+| POST | `/views/{resource}` | Crear vista (`is_public` opcional) |
+| GET | `/views/{resource}/{id}` | Obtener vista |
+| PATCH | `/views/{resource}/{id}` | Actualizar vista (solo propietario) |
+| DELETE | `/views/{resource}/{id}` | Eliminar vista (solo propietario) |
+| GET | `/views/{resource}/{id}/export` | Exportar definicion portatil (sin id/user) |
+| POST | `/views/{resource}/import` | Importar vista desde definicion exportada |
 
 ---
 
@@ -1034,4 +1097,4 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh \
 
 ---
 
-*Manual generado para PIM v1.1 — Marzo 2026*
+*Manual generado para PIM v1.2 — Marzo 2026*

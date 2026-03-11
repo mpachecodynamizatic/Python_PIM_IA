@@ -48,6 +48,10 @@ export async function createProduct(data: ProductCreate): Promise<Product> {
   return response.data;
 }
 
+export async function deleteProduct(sku: string): Promise<void> {
+  await client.delete(`/products/${sku}`);
+}
+
 export async function updateProduct(
   sku: string,
   data: ProductUpdate

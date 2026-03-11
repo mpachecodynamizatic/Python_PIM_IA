@@ -5,6 +5,8 @@ import type {
   QualityRuleCreate,
   QualityRuleSet,
   QualityRuleSetCreate,
+  QualityRuleSetUpdate,
+  QualityRuleUpdate,
   QualityScore,
   SimulationResult,
 } from '../types/quality';
@@ -35,6 +37,11 @@ export async function deleteRuleSet(id: string): Promise<void> {
   await client.delete(`/quality-rules/sets/${id}`);
 }
 
+export async function updateRuleSet(id: string, data: QualityRuleSetUpdate): Promise<QualityRuleSet> {
+  const response = await client.patch<QualityRuleSet>(`/quality-rules/sets/${id}`, data);
+  return response.data;
+}
+
 export async function activateRuleSet(id: string): Promise<void> {
   await client.post(`/quality-rules/sets/${id}/activate`);
 }
@@ -50,6 +57,11 @@ export async function addRule(ruleSetId: string, data: QualityRuleCreate): Promi
 
 export async function deleteRule(ruleId: string): Promise<void> {
   await client.delete(`/quality-rules/rules/${ruleId}`);
+}
+
+export async function updateRule(ruleId: string, data: QualityRuleUpdate): Promise<QualityRule> {
+  const response = await client.patch<QualityRule>(`/quality-rules/rules/${ruleId}`, data);
+  return response.data;
 }
 
 export async function simulateRuleSet(ruleSetId: string, page = 1, size = 20): Promise<SimulationResult> {

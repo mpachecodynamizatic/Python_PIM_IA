@@ -14,6 +14,7 @@ import I18nMissing from './pages/I18n/I18nMissing';
 import AttributeFamilies from './pages/Attributes/AttributeFamilies';
 import SyncDashboard from './pages/Sync/SyncDashboard';
 import QualityRulesAdmin from './pages/Quality/QualityRulesAdmin';
+import BrandManager from './pages/Brands/BrandManager';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,6 +45,7 @@ export default function App() {
               <Route path="/quality/rules" element={<QualityRulesAdmin />} />
               <Route path="/i18n" element={<I18nMissing />} />
               <Route path="/attributes" element={<AttributeFamilies />} />
+              <Route path="/brands" element={<BrandManager />} />
               <Route path="/sync" element={<SyncDashboard />} />
             </Route>
           </Routes>

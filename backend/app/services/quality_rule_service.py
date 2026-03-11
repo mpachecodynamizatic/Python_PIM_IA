@@ -7,8 +7,10 @@ from app.models.quality_rule import QualityRuleSet, QualityRule
 from app.schemas.quality_rule import (
     QualityRuleSetCreate,
     QualityRuleSetRead,
+    QualityRuleSetUpdate,
     QualityRuleCreate,
     QualityRuleRead,
+    QualityRuleUpdate,
 )
 
 
@@ -52,6 +54,27 @@ async def create_rule_set(db: AsyncSession, data: QualityRuleSetCreate) -> Quali
     )
     rule_set = result.scalar_one()
     return QualityRuleSetRead.model_validate(rule_set)
+
+
+async def update_rule_set(db: AsyncSession, rule_set_id: str, data: QualityRuleSetUpdate) -> QualityRuleSetRead:
+    result = await db.execute(
+        select(QualityRuleSet)
+        .options(selectinload(QualityRuleSet.rules))
+        .where(QualityRuleSet.id == rule_set_id)
+    )
+    rs = result.scalar_one_or_none()
+    if rs is None:
+        raise HTTPException(status_code=404, detail="Rule set not found")
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(rs, field, value)
+    await db.flush()
+    await db.refresh(rs)
+    result2 = await db.execute(
+        select(QualityRuleSet)
+        .options(selectinload(QualityRuleSet.rules))
+        .where(QualityRuleSet.id == rule_set_id)
+    )
+    return QualityRuleSetRead.model_validate(result2.scalar_one())
 
 
 async def delete_rule_set(db: AsyncSession, rule_set_id: str) -> None:
@@ -104,4 +127,16 @@ async def delete_rule(db: AsyncSession, rule_id: str) -> None:
         raise HTTPException(status_code=404, detail="Rule not found")
     await db.delete(rule)
     await db.flush()
+
+
+async def update_rule(db: AsyncSession, rule_id: str, data: QualityRuleUpdate) -> QualityRuleRead:
+    result = await db.execute(select(QualityRule).where(QualityRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(rule, field, value)
+    await db.flush()
+    await db.refresh(rule)
+    return QualityRuleRead.model_validate(rule)
 

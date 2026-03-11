@@ -28,6 +28,17 @@ class QualityRuleSetCreate(QualityRuleSetBase):
     rules: list[QualityRuleCreate] = []
 
 
+class QualityRuleSetUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class QualityRuleUpdate(BaseModel):
+    weight: float | None = None
+    min_score: float | None = None
+    required_status: str | None = None
+
+
 class QualityRuleSetRead(QualityRuleSetBase):
     id: str
     rules: list[QualityRuleRead] = []

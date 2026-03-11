@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import {
   Accordion,
   AccordionActions,
@@ -33,6 +33,7 @@ import {
   ArrowUpward,
   CheckCircle,
   Delete,
+  Edit,
   ExpandMore,
   PlayArrow,
   PowerSettingsNew,
@@ -47,8 +48,17 @@ import {
   deleteRuleSet,
   listRuleSets,
   simulateRuleSet,
+  updateRule,
+  updateRuleSet,
 } from '../../api/quality';
-import type { QualityRuleCreate, QualityRuleSetCreate, SimulationResult } from '../../types/quality';
+import type {
+  QualityRule,
+  QualityRuleCreate,
+  QualityRuleSetCreate,
+  QualityRuleUpdate,
+  QualityRuleSetUpdate,
+  SimulationResult,
+} from '../../types/quality';
 
 const DIMENSIONS = ['brand', 'category', 'seo', 'attributes', 'media', 'i18n'];
 const DIMENSION_LABELS: Record<string, string> = {
@@ -62,18 +72,35 @@ const DIMENSION_LABELS: Record<string, string> = {
 
 export default function QualityRulesAdmin() {
   const queryClient = useQueryClient();
+  const [mutError, setMutError] = useState('');
+
+  // --- Dialogs: crear conjunto ---
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [addRuleDialogOpen, setAddRuleDialogOpen] = useState(false);
-  const [targetSetId, setTargetSetId] = useState('');
-  // New rule set form
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
-  // New rule form
+
+  // --- Dialog: editar conjunto ---
+  const [editSetOpen, setEditSetOpen] = useState(false);
+  const [editSetId, setEditSetId] = useState('');
+  const [editSetName, setEditSetName] = useState('');
+  const [editSetDesc, setEditSetDesc] = useState('');
+
+  // --- Dialog: agregar regla ---
+  const [addRuleDialogOpen, setAddRuleDialogOpen] = useState(false);
+  const [targetSetId, setTargetSetId] = useState('');
   const [ruleDimension, setRuleDimension] = useState('brand');
   const [ruleWeight, setRuleWeight] = useState('1.0');
   const [ruleMinScore, setRuleMinScore] = useState('0.0');
   const [ruleStatus, setRuleStatus] = useState('');
-  // Simulation
+
+  // --- Dialog: editar regla ---
+  const [editRuleOpen, setEditRuleOpen] = useState(false);
+  const [editRuleTarget, setEditRuleTarget] = useState<QualityRule | null>(null);
+  const [editWeight, setEditWeight] = useState('');
+  const [editMinScore, setEditMinScore] = useState('');
+  const [editRuleStatus, setEditRuleStatus] = useState('');
+
+  // --- Simulation ---
   const [simDialogOpen, setSimDialogOpen] = useState(false);
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
   const [simLoading, setSimLoading] = useState(false);
@@ -84,6 +111,10 @@ export default function QualityRulesAdmin() {
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['quality-rule-sets'] });
+  const onError = (err: unknown) => {
+    const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+    setMutError(msg || 'Error inesperado. IntÃ©ntalo de nuevo.');
+  };
 
   const createMutation = useMutation({
     mutationFn: (data: QualityRuleSetCreate) => createRuleSet(data),
@@ -93,21 +124,31 @@ export default function QualityRulesAdmin() {
       setNewName('');
       setNewDesc('');
     },
+    onError,
+  });
+
+  const editSetMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: QualityRuleSetUpdate }) => updateRuleSet(id, data),
+    onSuccess: () => { invalidate(); setEditSetOpen(false); },
+    onError,
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteRuleSet(id),
     onSuccess: invalidate,
+    onError,
   });
 
   const activateMutation = useMutation({
     mutationFn: (id: string) => activateRuleSet(id),
     onSuccess: invalidate,
+    onError,
   });
 
   const deactivateMutation = useMutation({
     mutationFn: () => deactivateAllRuleSets(),
     onSuccess: invalidate,
+    onError,
   });
 
   const addRuleMutation = useMutation({
@@ -120,19 +161,29 @@ export default function QualityRulesAdmin() {
       setRuleMinScore('0.0');
       setRuleStatus('');
     },
+    onError,
+  });
+
+  const editRuleMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: QualityRuleUpdate }) => updateRule(id, data),
+    onSuccess: () => { invalidate(); setEditRuleOpen(false); setEditRuleTarget(null); },
+    onError,
   });
 
   const deleteRuleMutation = useMutation({
     mutationFn: (id: string) => deleteRule(id),
     onSuccess: invalidate,
+    onError,
   });
 
   const handleCreateSet = () => {
     if (!newName.trim()) return;
+    setMutError('');
     createMutation.mutate({ name: newName.trim(), description: newDesc.trim() || null });
   };
 
   const handleAddRule = () => {
+    setMutError('');
     addRuleMutation.mutate({
       setId: targetSetId,
       data: {
@@ -140,6 +191,45 @@ export default function QualityRulesAdmin() {
         weight: parseFloat(ruleWeight) || 1.0,
         min_score: parseFloat(ruleMinScore) || 0.0,
         required_status: ruleStatus || null,
+      },
+    });
+  };
+
+  const openEditSet = (id: string, name: string, desc: string | null) => {
+    setEditSetId(id);
+    setEditSetName(name);
+    setEditSetDesc(desc || '');
+    setMutError('');
+    setEditSetOpen(true);
+  };
+
+  const handleEditSet = () => {
+    if (!editSetName.trim()) return;
+    setMutError('');
+    editSetMutation.mutate({
+      id: editSetId,
+      data: { name: editSetName.trim(), description: editSetDesc.trim() || null },
+    });
+  };
+
+  const openEditRule = (rule: QualityRule) => {
+    setEditRuleTarget(rule);
+    setEditWeight(String(rule.weight));
+    setEditMinScore(String(rule.min_score));
+    setEditRuleStatus(rule.required_status || '');
+    setMutError('');
+    setEditRuleOpen(true);
+  };
+
+  const handleEditRule = () => {
+    if (!editRuleTarget) return;
+    setMutError('');
+    editRuleMutation.mutate({
+      id: editRuleTarget.id,
+      data: {
+        weight: parseFloat(editWeight) || 1.0,
+        min_score: parseFloat(editMinScore) || 0.0,
+        required_status: editRuleStatus || null,
       },
     });
   };
@@ -174,10 +264,16 @@ export default function QualityRulesAdmin() {
             Configura conjuntos de reglas con pesos y umbrales por dimension
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<Add />} onClick={() => setCreateDialogOpen(true)}>
+        <Button variant="contained" startIcon={<Add />} onClick={() => { setMutError(''); setCreateDialogOpen(true); }}>
           Nuevo Conjunto
         </Button>
       </Box>
+
+      {mutError && (
+        <Alert severity="error" onClose={() => setMutError('')} sx={{ mb: 2 }}>
+          {mutError}
+        </Alert>
+      )}
 
       {activeSet ? (
         <Alert severity="info" sx={{ mb: 2 }}>
@@ -185,7 +281,7 @@ export default function QualityRulesAdmin() {
         </Alert>
       ) : (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          Sin conjunto activo — se usa calculo por defecto (media aritmetica sin pesos)
+          Sin conjunto activo â€” se usa calculo por defecto (media aritmetica sin pesos)
         </Alert>
       )}
 
@@ -239,6 +335,11 @@ export default function QualityRulesAdmin() {
                         )}
                       </TableCell>
                       <TableCell>
+                        <Tooltip title="Editar regla">
+                          <IconButton size="small" onClick={() => openEditRule(rule)}>
+                            <Edit fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Eliminar regla">
                           <IconButton
                             size="small"
@@ -273,10 +374,18 @@ export default function QualityRulesAdmin() {
               startIcon={<Add />}
               onClick={() => {
                 setTargetSetId(rs.id);
+                setMutError('');
                 setAddRuleDialogOpen(true);
               }}
             >
               Agregar Regla
+            </Button>
+            <Button
+              size="small"
+              startIcon={<Edit />}
+              onClick={() => openEditSet(rs.id, rs.name, rs.description)}
+            >
+              Editar
             </Button>
             {!rs.active ? (
               <Button
@@ -312,10 +421,16 @@ export default function QualityRulesAdmin() {
       ))}
 
       {/* Dialog: crear conjunto */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={createDialogOpen}
+        onClose={() => { setCreateDialogOpen(false); setNewName(''); setNewDesc(''); }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Nuevo Conjunto de Reglas</DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            {mutError && <Alert severity="error">{mutError}</Alert>}
             <TextField
               label="Nombre"
               value={newName}
@@ -332,13 +447,94 @@ export default function QualityRulesAdmin() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>Cancelar</Button>
+          <Button onClick={() => { setCreateDialogOpen(false); setNewName(''); setNewDesc(''); }}>Cancelar</Button>
           <Button
             variant="contained"
             onClick={handleCreateSet}
             disabled={!newName.trim() || createMutation.isPending}
           >
             Crear
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog: editar conjunto */}
+      <Dialog
+        open={editSetOpen}
+        onClose={() => setEditSetOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Editar Conjunto</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            {mutError && <Alert severity="error">{mutError}</Alert>}
+            <TextField
+              label="Nombre"
+              value={editSetName}
+              onChange={(e) => setEditSetName(e.target.value)}
+              autoFocus
+            />
+            <TextField
+              label="Descripcion (opcional)"
+              value={editSetDesc}
+              onChange={(e) => setEditSetDesc(e.target.value)}
+              multiline
+              rows={2}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditSetOpen(false)}>Cancelar</Button>
+          <Button
+            variant="contained"
+            onClick={handleEditSet}
+            disabled={!editSetName.trim() || editSetMutation.isPending}
+          >
+            Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog: editar regla */}
+      <Dialog open={editRuleOpen} onClose={() => setEditRuleOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Editar Regla â€” {editRuleTarget ? DIMENSION_LABELS[editRuleTarget.dimension] ?? editRuleTarget.dimension : ''}</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            {mutError && <Alert severity="error">{mutError}</Alert>}
+            <TextField
+              label="Peso"
+              type="number"
+              value={editWeight}
+              onChange={(e) => setEditWeight(e.target.value)}
+              inputProps={{ step: 0.5, min: 0.1, max: 10 }}
+            />
+            <TextField
+              label="Score minimo"
+              type="number"
+              value={editMinScore}
+              onChange={(e) => setEditMinScore(e.target.value)}
+              inputProps={{ step: 0.1, min: 0, max: 1 }}
+            />
+            <FormControl fullWidth size="small">
+              <InputLabel>Aplica solo a estado (opcional)</InputLabel>
+              <Select
+                value={editRuleStatus}
+                label="Aplica solo a estado (opcional)"
+                onChange={(e) => setEditRuleStatus(e.target.value)}
+              >
+                <MenuItem value="">Todos los estados</MenuItem>
+                <MenuItem value="draft">draft</MenuItem>
+                <MenuItem value="ready">ready</MenuItem>
+                <MenuItem value="retired">retired</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditRuleOpen(false)}>Cancelar</Button>
+          <Button variant="contained" onClick={handleEditRule} disabled={editRuleMutation.isPending}>
+            Guardar
           </Button>
         </DialogActions>
       </Dialog>
@@ -440,10 +636,16 @@ export default function QualityRulesAdmin() {
       </Dialog>
 
       {/* Dialog: agregar regla */}
-      <Dialog open={addRuleDialogOpen} onClose={() => setAddRuleDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={addRuleDialogOpen}
+        onClose={() => { setAddRuleDialogOpen(false); setRuleDimension('brand'); setRuleWeight('1.0'); setRuleMinScore('0.0'); setRuleStatus(''); }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Agregar Regla</DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            {mutError && <Alert severity="error">{mutError}</Alert>}
             <FormControl fullWidth>
               <InputLabel>Dimension</InputLabel>
               <Select value={ruleDimension} label="Dimension" onChange={(e) => setRuleDimension(e.target.value)}>
@@ -484,7 +686,7 @@ export default function QualityRulesAdmin() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAddRuleDialogOpen(false)}>Cancelar</Button>
+          <Button onClick={() => { setAddRuleDialogOpen(false); setRuleDimension('brand'); setRuleWeight('1.0'); setRuleMinScore('0.0'); setRuleStatus(''); }}>Cancelar</Button>
           <Button variant="contained" onClick={handleAddRule} disabled={addRuleMutation.isPending}>
             Agregar
           </Button>

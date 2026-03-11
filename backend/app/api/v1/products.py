@@ -87,6 +87,16 @@ async def update_product(
     return await product_service.update_product(db, sku, body, actor=str(user.id))
 
 
+@router.delete("/{sku}", status_code=204)
+async def delete_product(
+    sku: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_scopes("products:write")),
+):
+    await product_service.delete_product(db, sku, actor=str(user.id))
+    await db.commit()
+
+
 @router.post("/{sku}/transitions", response_model=ProductRead)
 async def transition_product(
     sku: str,

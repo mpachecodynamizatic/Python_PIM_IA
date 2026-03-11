@@ -40,15 +40,19 @@ import {
   Delete,
   ExpandMore,
   FilterList,
+  FileDownload,
+  FileUpload,
   Public,
   Save,
   Star,
   StarBorder,
   Upload,
 } from '@mui/icons-material';
-import { listProducts, createProduct } from '../../api/products';
+import { listProducts, createProduct, deleteProduct } from '../../api/products';
 import type { ProductFilters } from '../../api/products';
 import { listCategories } from '../../api/categories';
+import { listBrands } from '../../api/brands';
+import type { Brand } from '../../types/brand';
 import {
   listProductViews, createProductView, deleteProductView, updateProductView,
   exportProductView, importProductView,
@@ -56,6 +60,8 @@ import {
 import type { ProductListItem } from '../../types/product';
 import type { Category } from '../../types/category';
 import type { SavedView, SavedViewExport } from '../../types/savedView';
+import ExportDialog from '../../components/ExportDialog';
+import ImportDialog from '../../components/ImportDialog';
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Borrador',
@@ -133,6 +139,7 @@ export default function ProductList() {
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newProduct, setNewProduct] = useState({ sku: '', brand: '', category_id: '' });
   const [loading, setLoading] = useState(false);
@@ -146,6 +153,13 @@ export default function ProductList() {
   const [viewDesc, setViewDesc] = useState('');
   const [viewDefault, setViewDefault] = useState(false);
   const [viewPublic, setViewPublic] = useState(false);
+
+  // Export / Import dialogs
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+
+  // Delete confirmation
+  const [deleteConfirmSku, setDeleteConfirmSku] = useState<string | null>(null);
 
   const updateFilter = (key: keyof Filters, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -185,6 +199,7 @@ export default function ProductList() {
 
   useEffect(() => {
     listCategories().then(setCategories).catch(() => {});
+    listBrands().then(setBrands).catch(() => {});
     loadViews();
   }, []);
 
@@ -268,10 +283,30 @@ export default function ProductList() {
   };
 
   const handleCreate = async () => {
-    await createProduct(newProduct);
-    setDialogOpen(false);
-    setNewProduct({ sku: '', brand: '', category_id: '' });
-    fetchProducts();
+    setError('');
+    try {
+      await createProduct(newProduct);
+      setDialogOpen(false);
+      setNewProduct({ sku: '', brand: '', category_id: '' });
+      fetchProducts();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(msg || 'Error al crear el producto.');
+    }
+  };
+
+  const handleDeleteProduct = async () => {
+    if (!deleteConfirmSku) return;
+    setError('');
+    try {
+      await deleteProduct(deleteConfirmSku);
+      setDeleteConfirmSku(null);
+      fetchProducts();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(msg || 'Error al eliminar el producto.');
+      setDeleteConfirmSku(null);
+    }
   };
 
   const activeFilterCount = Object.values(filters).filter((v) => v !== '').length;
@@ -280,9 +315,31 @@ export default function ProductList() {
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Typography variant="h4">Productos</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
-          Nuevo Producto
-        </Button>
+        <Box display="flex" gap={1}>
+          <Tooltip title="Importar productos desde Excel">
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<FileUpload />}
+              onClick={() => setImportOpen(true)}
+            >
+              Importar
+            </Button>
+          </Tooltip>
+          <Tooltip title="Exportar productos a Excel">
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<FileDownload />}
+              onClick={() => setExportOpen(true)}
+            >
+              Exportar
+            </Button>
+          </Tooltip>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
+            Nuevo Producto
+          </Button>
+        </Box>
       </Box>
 
       {error && (
@@ -510,12 +567,13 @@ export default function ProductList() {
               <TableCell>Marca</TableCell>
               <TableCell>Estado</TableCell>
               <TableCell>Actualizado</TableCell>
+              <TableCell />
             </TableRow>
           </TableHead>
           <TableBody>
             {loading && (
               <TableRow>
-                <TableCell colSpan={4} align="center">
+                <TableCell colSpan={5} align="center">
                   <CircularProgress size={24} />
                 </TableCell>
               </TableRow>
@@ -533,11 +591,22 @@ export default function ProductList() {
                   <Chip label={STATUS_LABELS[product.status] || product.status} color={statusColors[product.status] || 'default'} size="small" />
                 </TableCell>
                 <TableCell>{new Date(product.updated_at).toLocaleDateString()}</TableCell>
+                <TableCell align="right">
+                  <Tooltip title="Eliminar producto">
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirmSku(product.sku); }}
+                    >
+                      <Delete fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </TableCell>
               </TableRow>
             ))}
             {!loading && products.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} align="center">
+                <TableCell colSpan={5} align="center">
                   No se encontraron productos
                 </TableCell>
               </TableRow>
@@ -570,14 +639,18 @@ export default function ProductList() {
             margin="normal"
             required
           />
-          <TextField
-            fullWidth
-            label="Marca"
-            value={newProduct.brand}
-            onChange={(e) => setNewProduct({ ...newProduct, brand: e.target.value })}
-            margin="normal"
-            required
-          />
+          <FormControl fullWidth margin="normal" required>
+            <InputLabel>Marca</InputLabel>
+            <Select
+              value={newProduct.brand}
+              label="Marca"
+              onChange={(e) => setNewProduct({ ...newProduct, brand: e.target.value })}
+            >
+              {brands.filter((b) => b.active).map((b) => (
+                <MenuItem key={b.id} value={b.name}>{b.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           <FormControl fullWidth margin="normal" required>
             <InputLabel>Categoria</InputLabel>
             <Select
@@ -594,7 +667,7 @@ export default function ProductList() {
           </FormControl>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancelar</Button>
+          <Button onClick={() => { setDialogOpen(false); setNewProduct({ sku: '', brand: '', category_id: '' }); }}>Cancelar</Button>
           <Button
             variant="contained"
             onClick={handleCreate}
@@ -602,6 +675,20 @@ export default function ProductList() {
           >
             Crear
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog: confirmar eliminar producto */}
+      <Dialog open={deleteConfirmSku !== null} onClose={() => setDeleteConfirmSku(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Eliminar Producto</DialogTitle>
+        <DialogContent>
+          <Typography>
+            ¿Eliminar el producto <strong>{deleteConfirmSku}</strong>? Esta accion no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmSku(null)}>Cancelar</Button>
+          <Button variant="contained" color="error" onClick={handleDeleteProduct}>Eliminar</Button>
         </DialogActions>
       </Dialog>
 
@@ -647,6 +734,25 @@ export default function ProductList() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Dialog: exportar productos */}
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        resource="products"
+        resourceLabel="Productos"
+        filters={filtersToApiParams(filters) as Record<string, unknown>}
+        totalRecords={total}
+      />
+
+      {/* Dialog: importar productos */}
+      <ImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        resource="products"
+        resourceLabel="Productos"
+        onSuccess={fetchProducts}
+      />
     </Box>
   );
 }

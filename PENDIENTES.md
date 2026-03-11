@@ -3,8 +3,8 @@
 Resumen consolidado de todas las fases y funcionalidades pendientes de implementacion en cada plan de trabajo.
 
 > Generado: Marzo 2026
-> Total de planes: 7
-> Planes completados al 100%: 7 (01, 02, 03, 04, 05, 06, 07)
+> Total de planes: 8
+> Planes completados al 100%: 8 (01, 02, 03, 04, 05, 06, 07, 08)
 > Planes con fases pendientes: 0
 
 ---
@@ -93,20 +93,31 @@ Todas las fases implementadas:
 
 ---
 
+## 08 - Exportación / Importación Excel (estilo RapidStart)
+
+**Estado: COMPLETADO**
+
+Todas las fases implementadas:
+- Fase 1: Motor de exportación backend (`ExportConfig`, `export_service.py`, endpoints)
+- Fase 2: Motor de importación con validación backend (`import_service.py`, dry-run validate + apply)
+- Fase 3: Frontend — `ExportDialog` con selector de campos y descarga de plantilla
+- Fase 4: Frontend — `ImportDialog` wizard 3 pasos (subida → informe validación → resultado), integrado en ProductList
+- 7 recursos soportados: products, categories, product_i18n, media_assets, users, quality_rules, attribute_families
+- 20 tests pasando (9 exportación + 11 importación)
+
+---
+
 ## Resumen global de pendientes
 
-Todos los planes (01-07) han sido completados al 100%. No hay funcionalidades pendientes.
+Todos los planes (01-08) han sido completados al 100%. No hay funcionalidades pendientes.
 
 ### Estadisticas
 
 | Metrica | Valor |
 |---------|-------|
-| Total de planes | 7 |
-| Planes completados (100%) | 5 |
-| Planes con pendientes | 2 |
-| Total fases pendientes | 2 (todas son "Fase 4 - Refinamientos") |
-| Total funcionalidades pendientes | 7 |
-| Prioridad alta | 1 |
-| Prioridad media | 2 |
-| Prioridad baja | 4 |
-| Tests backend totales | 126 |
+| Total de planes | 8 |
+| Planes completados (100%) | 8 |
+| Planes con pendientes | 0 |
+| Total fases pendientes | 0 |
+| Total funcionalidades pendientes | 0 |
+| Tests backend totales | 146 |

@@ -6,8 +6,10 @@ from app.core.dependencies import require_roles
 from app.schemas.quality_rule import (
     QualityRuleSetCreate,
     QualityRuleSetRead,
+    QualityRuleSetUpdate,
     QualityRuleCreate,
     QualityRuleRead,
+    QualityRuleUpdate,
 )
 from app.services import quality_rule_service
 
@@ -48,6 +50,18 @@ async def delete_rule_set(
 ):
     await quality_rule_service.delete_rule_set(db, rule_set_id)
     await db.commit()
+
+
+@router.patch("/sets/{rule_set_id}", response_model=QualityRuleSetRead)
+async def update_rule_set(
+    rule_set_id: str,
+    body: QualityRuleSetUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin=Depends(require_roles("admin")),
+):
+    result = await quality_rule_service.update_rule_set(db, rule_set_id, body)
+    await db.commit()
+    return result
 
 
 @router.post("/sets/{rule_set_id}/activate", status_code=204)
@@ -96,4 +110,16 @@ async def delete_rule(
 ):
     await quality_rule_service.delete_rule(db, rule_id)
     await db.commit()
+
+
+@router.patch("/rules/{rule_id}", response_model=QualityRuleRead)
+async def update_rule(
+    rule_id: str,
+    body: QualityRuleUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin=Depends(require_roles("admin")),
+):
+    result = await quality_rule_service.update_rule(db, rule_id, body)
+    await db.commit()
+    return result
 

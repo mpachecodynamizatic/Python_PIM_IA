@@ -181,6 +181,21 @@ async def get_product(db: AsyncSession, sku: str) -> Product:
     return product
 
 
+async def delete_product(db: AsyncSession, sku: str, actor: str) -> None:
+    product = await get_product(db, sku)
+    audit = AuditLog(
+        resource="product",
+        resource_id=sku,
+        actor=actor,
+        action="delete",
+        before={"sku": sku, "name": product.name, "status": product.status},
+        after=None,
+    )
+    db.add(audit)
+    await db.delete(product)
+    await db.flush()
+
+
 async def create_product(db: AsyncSession, data: ProductCreate, actor: str) -> Product:
     existing = await db.execute(select(Product).where(Product.sku == data.sku))
     if existing.scalar_one_or_none():

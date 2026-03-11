@@ -31,6 +31,7 @@ from app.models import (  # noqa: F401
     quality_rule,
     saved_view,
     product_comment,
+    brand,
 )
 
 UPLOAD_DIR = Path(__file__).parent.parent / "uploads"

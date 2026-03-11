@@ -31,6 +31,19 @@ class AttributeFamilyCreate(AttributeFamilyBase):
     pass
 
 
+class AttributeFamilyUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    category_id: str | None = None
+
+
+class AttributeDefinitionUpdate(BaseModel):
+    label: str | None = None
+    type: str | None = None
+    required: bool | None = None
+    options_json: str | None = None
+
+
 class AttributeFamilyRead(AttributeFamilyBase):
     id: str
 

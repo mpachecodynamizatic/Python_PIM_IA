@@ -52,6 +52,8 @@ import { listCategories } from '../../api/categories';
 import type { Category } from '../../types/category';
 import { listFamilies, listDefinitions } from '../../api/attributes';
 import type { AttributeFamily, AttributeDefinition } from '../../api/attributes';
+import { listBrands } from '../../api/brands';
+import type { Brand } from '../../types/brand';
 import { getProductSyncHistory, getProductSyncStatus } from '../../api/sync';
 import type { ProductSyncHistory, ProductSyncStatus } from '../../types/sync';
 
@@ -79,6 +81,7 @@ export default function ProductDetail() {
   const [editSeo, setEditSeo] = useState('');
   const [editSeoErr, setEditSeoErr] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [families, setFamilies] = useState<AttributeFamily[]>([]);
   const [familyDefs, setFamilyDefs] = useState<AttributeDefinition[]>([]);
   const [editFamilyId, setEditFamilyId] = useState<string | null>(null);
@@ -208,8 +211,9 @@ export default function ProductDetail() {
       listCategories().catch(() => []),
       listFamilies().catch(() => []),
       getProductComments(sku).catch(() => []),
+      listBrands().catch(() => []),
     ])
-      .then(async ([p, m, t, q, v, cats, fams, comments]) => {
+      .then(async ([p, m, t, q, v, cats, fams, comments, brs]) => {
         setProduct(p);
         setEditBrand(p.brand);
         setEditCategoryId(p.category_id);
@@ -222,6 +226,7 @@ export default function ProductDetail() {
         setCategories(cats);
         setFamilies(fams);
         setProductComments(comments);
+        setBrands(brs);
         setEditFamilyId(p.family_id || null);
         setStructuredAttrs(p.attributes || {});
         // Load definitions if product has a family
@@ -688,9 +693,17 @@ export default function ProductDetail() {
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>Informacion General</Typography>
           <TextField
-            fullWidth label="Marca" value={editBrand}
-            onChange={(e) => setEditBrand(e.target.value)} margin="normal"
-          />
+            select
+            fullWidth
+            label="Marca"
+            value={editBrand}
+            onChange={(e) => setEditBrand(e.target.value)}
+            margin="normal"
+          >
+            {brands.filter((b) => b.active || b.name === editBrand).map((b) => (
+              <MenuItem key={b.id} value={b.name}>{b.name}</MenuItem>
+            ))}
+          </TextField>
           <Autocomplete
             options={categories}
             getOptionLabel={(opt) => opt.name}
