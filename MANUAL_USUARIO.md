@@ -30,8 +30,10 @@ PIM es una aplicacion de gestion de informacion de productos (Product Informatio
 - **Taxonomia jerarquica** de categorias en arbol
 - **Gestion multimedia** con subida de imagenes, videos y PDFs
 - **Traducciones** multi-idioma por producto
-- **Scoring de calidad** automatico sobre 6 dimensiones
+- **Scoring de calidad** automatico sobre 6 dimensiones con reglas personalizables y simulacion what-if
 - **Versionado completo** con historial, comparacion, restauracion y comentarios
+- **Comentarios colaborativos** por producto con hilos de respuestas
+- **Busqueda avanzada** con filtros de fecha, media, traducciones y vistas guardadas
 - **Flujo de estados** configurable (borrador, en revision, aprobado, publicado, retirado)
 - **Importacion masiva** desde Excel/CSV con plantillas de mapeo
 - **Sincronizacion** a canales externos
@@ -169,14 +171,37 @@ La pagina principal muestra un resumen del estado del catalogo con 4 tarjetas:
 
 Acceder desde el menu lateral: **Productos**
 
+#### Vistas guardadas
+
+En la parte superior del listado se muestra una barra de **vistas guardadas**:
+
+- Cada vista aparece como un chip clicable con su nombre
+- La vista marcada como **predeterminada** muestra un icono de estrella y se aplica automaticamente al entrar en la pantalla
+- Clic en un chip para aplicar los filtros guardados de esa vista
+- Boton de eliminar (X) en cada chip para borrar la vista
+
+**Guardar una vista:**
+1. Configurar los filtros deseados
+2. Pulsar **Guardar vista**
+3. Introducir nombre y descripcion opcional
+4. Activar "Vista predeterminada" si se desea que se aplique al entrar
+5. Pulsar **Guardar**
+
 #### Busqueda y filtrado
 
+**Filtros basicos:**
 - **Barra de busqueda:** Busca por SKU y marca (busqueda parcial)
-- **Filtro de estado:** Desplegable con las opciones:
-  - Todos
-  - Borrador (`draft`)
-  - Publicado (`ready`)
-  - Retirado (`retired`)
+- **Filtro de estado:** Desplegable (Todos, Borrador, Publicado, Retirado)
+- **Filtro de categoria:** Desplegable con todas las categorias del sistema
+
+**Filtros avanzados** (panel expandible):
+- **Marca:** Filtrar por marca exacta
+- **Rango de creacion:** Fecha desde / hasta de creacion del producto
+- **Rango de actualizacion:** Fecha desde / hasta de ultima modificacion
+- **Tiene media:** Filtrar productos con/sin archivos multimedia
+- **Tiene traducciones:** Filtrar productos con/sin traducciones
+
+Boton **Limpiar filtros** para resetear todos los filtros a sus valores por defecto.
 
 #### Tabla de resultados
 
@@ -335,6 +360,24 @@ Muestra el score de calidad del producto calculado automaticamente sobre 6 dimen
 - **Score global:** Media de las 6 dimensiones (0-100%)
 - Cada dimension muestra una barra de progreso con color
 - Boton **Recalcular** para refrescar el score
+
+### Pestana: Comentarios
+
+Seccion de discusion general sobre el producto entre los miembros del equipo.
+
+**Escribir un comentario:**
+1. Escribir el texto en el campo de entrada
+2. Enviar con el icono de enviar o pulsando **Enter** (Shift+Enter para nueva linea)
+
+**Comentarios existentes:**
+- Cada comentario muestra el **autor**, la **fecha** y el **cuerpo** del mensaje
+- Boton de **Responder** (icono de flecha) para crear un hilo de respuestas
+- Boton de **Eliminar** (papelera) — solo el autor del comentario o un administrador puede eliminarlo
+
+**Hilos de respuestas:**
+- Si un comentario tiene respuestas, se muestra un boton "Ver N respuestas"
+- Clic para expandir/colapsar las respuestas, que aparecen indentadas con un borde izquierdo
+- Para responder a un comentario: clic en el icono de **Responder**, escribir el texto y enviar
 
 ### Pestana: Historial
 
@@ -741,9 +784,30 @@ Para tipo `enum`, incluir las opciones:
 
 ### Reglas de calidad personalizadas
 
-Configurar requisitos de calidad personalizados:
+Acceder desde el menu lateral: **Calidad** > pestana **Reglas de calidad**
 
-**Crear conjunto de reglas:**
+Los administradores pueden definir conjuntos de reglas personalizadas que modifican los pesos y requisitos minimos del scoring de calidad.
+
+**Crear conjunto de reglas (UI):**
+1. Pulsar **Nuevo conjunto**
+2. Rellenar nombre y descripcion
+3. Anadir reglas individuales: seleccionar dimension, peso y score minimo
+4. Opcionalmente restringir reglas por estado (`required_status`) o categoria (`scope_category_id`)
+
+**Activar/desactivar:**
+- Solo puede haber **un conjunto activo** a la vez
+- Botones de activar/desactivar en la cabecera de cada conjunto
+
+**Simulacion what-if:**
+1. Pulsar el boton **Simular** (icono play) en un conjunto
+2. Se abre un dialogo mostrando una tabla comparativa:
+   - Score actual vs score simulado por producto
+   - Diferencia (positiva/negativa) con iconos de flecha
+   - Violaciones detectadas con las nuevas reglas
+   - Cambio medio global
+
+**API de reglas de calidad:**
+
 ```
 POST /api/v1/quality-rules/sets
 {
@@ -757,7 +821,6 @@ POST /api/v1/quality-rules/sets
 ```
 POST /api/v1/quality-rules/sets/{rule_set_id}/activate
 ```
-Solo puede haber un conjunto activo a la vez.
 
 **Anadir regla:**
 ```
@@ -766,8 +829,14 @@ POST /api/v1/quality-rules/sets/{rule_set_id}/rules
   "dimension": "media",
   "weight": 2.0,
   "min_score": 1.0,
-  "required_status": "ready"
+  "required_status": "ready",
+  "scope_category_id": "uuid-opcional"
 }
+```
+
+**Simular conjunto:**
+```
+GET /api/v1/quality-rules/simulate/{rule_set_id}?page=1&size=20
 ```
 
 ### Vistas guardadas
@@ -845,8 +914,9 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh \
 | GET | `/products/{sku}/versions` | Historial de versiones |
 | POST | `/products/{sku}/versions/{id}/restore` | Restaurar version |
 | POST | `/products/{sku}/versions/retention` | Aplicar retencion |
-| GET | `/products/{sku}/comments` | Comentarios del producto |
-| POST | `/products/{sku}/comments` | Anadir comentario |
+| GET | `/products/{sku}/comments` | Comentarios del producto (top-level) |
+| POST | `/products/{sku}/comments` | Anadir comentario (con `parent_id` opcional para respuestas) |
+| GET | `/products/{sku}/comments/{id}/replies` | Respuestas a un comentario |
 | DELETE | `/products/{sku}/comments/{id}` | Eliminar comentario |
 | GET | `/products/{sku}/versions/{id}/comments` | Comentarios de version |
 | POST | `/products/{sku}/versions/{id}/comments` | Comentar version |
@@ -885,6 +955,7 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh \
 |--------|------|-------------|
 | GET | `/quality/products/{sku}` | Score de producto |
 | GET | `/quality/report` | Informe global |
+| GET | `/quality-rules/simulate/{id}` | Simulacion what-if de un conjunto |
 
 #### Importacion
 | Metodo | Ruta | Descripcion |
@@ -923,10 +994,13 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh \
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
 | GET | `/quality-rules/sets` | Listar conjuntos |
-| POST | `/quality-rules/sets` | Crear conjunto |
+| POST | `/quality-rules/sets` | Crear conjunto (con reglas inline) |
 | POST | `/quality-rules/sets/{id}/activate` | Activar conjunto |
+| POST | `/quality-rules/sets/{id}/deactivate` | Desactivar conjunto |
 | GET | `/quality-rules/sets/{id}/rules` | Listar reglas |
 | POST | `/quality-rules/sets/{id}/rules` | Crear regla |
+| DELETE | `/quality-rules/sets/{id}/rules/{rule_id}` | Eliminar regla |
+| DELETE | `/quality-rules/sets/{id}` | Eliminar conjunto |
 
 #### Vistas guardadas
 | Metodo | Ruta | Descripcion |
@@ -934,6 +1008,7 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh \
 | GET | `/views/products` | Mis vistas guardadas |
 | POST | `/views/products` | Crear vista |
 | GET | `/views/products/{id}` | Obtener vista |
+| PATCH | `/views/products/{id}` | Actualizar vista |
 | DELETE | `/views/products/{id}` | Eliminar vista |
 
 ---
@@ -959,4 +1034,4 @@ curl -X POST http://localhost:8000/api/v1/auth/refresh \
 
 ---
 
-*Manual generado para PIM v1.0 — Marzo 2026*
+*Manual generado para PIM v1.1 — Marzo 2026*

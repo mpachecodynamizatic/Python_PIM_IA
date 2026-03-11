@@ -19,6 +19,12 @@ export interface SyncJob {
     errors?: string[];
   };
   error_message: string | null;
+  retry_count: number;
+  max_retries: number;
+  next_retry_at: string | null;
+  scheduled: boolean;
+  cron_expression: string | null;
+  next_run_at: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -26,6 +32,8 @@ export interface SyncJob {
 export interface SyncJobCreate {
   channel: string;
   filters?: SyncJobFilters;
+  max_retries?: number;
+  cron_expression?: string | null;
 }
 
 export interface SyncJobList {
@@ -34,4 +42,36 @@ export interface SyncJobList {
   page: number;
   size: number;
   pages: number;
+}
+
+export interface SyncScheduleUpdate {
+  cron_expression: string | null;
+  enabled: boolean;
+}
+
+export interface ProductSyncHistory {
+  id: string;
+  sku: string;
+  channel: string;
+  job_id: string | null;
+  status: string;
+  detail: Record<string, unknown>;
+  error_message: string | null;
+  synced_at: string | null;
+}
+
+export interface ProductSyncHistoryList {
+  items: ProductSyncHistory[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+}
+
+export interface ProductSyncStatus {
+  sku: string;
+  channel: string;
+  status: string;
+  synced_at: string | null;
+  job_id: string | null;
 }

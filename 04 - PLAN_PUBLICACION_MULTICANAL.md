@@ -62,8 +62,17 @@ Usar la tabla `sync_jobs` para gestionar **sincronizaciones de productos a canal
 - Ruta `/sync` registrada en `App.tsx`.
 - Ítem "Sincronización" con icono `SyncAlt` en sidebar de navegación.
 
-**Fase 4 - Refinamientos futuros: PENDIENTE**
-- Historial de sincronización a nivel de producto (qué SKU está en qué canal y con qué estado).
-- Reintentos automáticos, programación (cron) y limitación de concurrencia por canal.
-- Conectores adicionales (Shopify, Amazon, etc.).
+**Fase 4 - Refinamientos futuros: COMPLETADA**
+- `ProductSyncHistory` model: registra el estado de publicación por SKU × canal × job (status: published/skipped/failed, error_message).
+- Reintentos automáticos con backoff exponencial (30s · 2^n): status `retry_pending`, campos `retry_count`, `max_retries`, `next_retry_at` en `SyncJob`.
+- Programación cron: campos `scheduled`, `cron_expression`, `next_run_at` en `SyncJob`; scheduler background en lifespan (cada 30s).
+- Limitación de concurrencia por canal: `asyncio.Semaphore(MAX_CONCURRENT_PER_CHANNEL=2)` por canal, instanciado perezosamente.
+- Conectores adicionales: **Shopify** (Admin API), **Amazon** (SP-API feed), **WooCommerce** (REST v3) — todos simulados, con seguimiento `ProductSyncDetail` por producto.
+- Nuevos endpoints REST:
+  - `PUT  /api/v1/sync/jobs/{job_id}/schedule` — actualizar/deshabilitar programación cron.
+  - `GET  /api/v1/sync/history/product/{sku}` — historial paginado de sync de un SKU.
+  - `GET  /api/v1/sync/history/product/{sku}/status` — estado más reciente por canal.
+  - `GET  /api/v1/sync/history/channel/{channel}` — historial paginado por canal.
+- Frontend: tabs "Jobs" + "Historial por canal" en SyncDashboard; columnas de reintentos y programación; dialog de cron; pestaña "Sync" en detalle de producto.
+- 29 tests backend en `tests/test_sync.py` (126 tests totales, todos passing).
 

@@ -51,6 +51,10 @@ app.dependency_overrides[get_db] = override_get_db
 import app.services.import_service as _import_svc
 _import_svc._session_factory = TestSessionLocal
 
+# Make sync background tasks use the test DB instead of the real one
+import app.services.sync_service as _sync_svc
+_sync_svc._session_factory = TestSessionLocal
+
 
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:

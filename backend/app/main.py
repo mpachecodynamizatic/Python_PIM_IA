@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from app.models import (  # noqa: F401
     mapping_template,
     media,
     product,
+    product_sync_history,
     sync_job,
     attribute_family,
     quality_rule,
@@ -66,9 +68,24 @@ async def lifespan(app: FastAPI):
             user.hashed_password = hash_password(settings.ADMIN_PASSWORD)
         await session.commit()
 
+    # Background scheduler for retries & cron jobs (runs every 30 seconds)
+    from app.services.sync_service import process_pending_retries, process_scheduled_jobs
+
+    async def _scheduler_loop():
+        while True:
+            try:
+                await process_pending_retries()
+                await process_scheduled_jobs()
+            except Exception:
+                pass  # scheduler should never crash
+            await asyncio.sleep(30)
+
+    scheduler_task = asyncio.create_task(_scheduler_loop())
+
     yield
 
     # Shutdown
+    scheduler_task.cancel()
     await engine.dispose()
 
 

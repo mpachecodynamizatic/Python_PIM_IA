@@ -3,10 +3,16 @@ from __future__ import annotations
 from app.connectors.base import BaseConnector
 from app.connectors.csv_connector import CsvConnector
 from app.connectors.http_connector import HttpConnector
+from app.connectors.shopify_connector import ShopifyConnector
+from app.connectors.amazon_connector import AmazonConnector
+from app.connectors.woocommerce_connector import WooCommerceConnector
 
 _REGISTRY: dict[str, type[BaseConnector]] = {
     "csv": CsvConnector,
     "http": HttpConnector,
+    "shopify": ShopifyConnector,
+    "amazon": AmazonConnector,
+    "woocommerce": WooCommerceConnector,
 }
 
 

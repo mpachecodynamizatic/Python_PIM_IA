@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.connectors.base import BaseConnector, ConnectorResult
+from app.connectors.base import BaseConnector, ConnectorResult, ProductSyncDetail
 from app.models.product import Product
 
 EXPORT_DIR = Path("exports")
@@ -60,6 +60,7 @@ class CsvConnector(BaseConnector):
                 titles.get("en", ""),
             ])
             result.exported += 1
+            result.product_details.append(ProductSyncDetail(sku=p.sku, status="published"))
 
         filepath.write_text(buf.getvalue(), encoding="utf-8")
         return result

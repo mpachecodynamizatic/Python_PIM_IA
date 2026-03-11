@@ -15,12 +15,14 @@ import {
   MenuItem,
   Paper,
   Select,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -31,16 +33,25 @@ import {
   ChevronRight,
   Refresh,
   Replay,
+  Schedule,
 } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createSyncJob, getChannels, listSyncJobs, retrySyncJob } from '../../api/sync';
-import type { SyncJob, SyncJobCreate } from '../../types/sync';
+import {
+  createSyncJob,
+  getChannels,
+  getChannelSyncHistory,
+  listSyncJobs,
+  retrySyncJob,
+  updateJobSchedule,
+} from '../../api/sync';
+import type { SyncJob, SyncJobCreate, SyncScheduleUpdate } from '../../types/sync';
 
 const STATUS_COLORS: Record<string, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
   queued: 'default',
   running: 'info',
   done: 'success',
   failed: 'error',
+  retry_pending: 'warning',
 };
 
 function StatusChip({ status }: { status: string }) {
@@ -81,13 +92,21 @@ function formatDate(val: string | null): string {
 
 export default function SyncDashboard() {
   const queryClient = useQueryClient();
+  const [tabIndex, setTabIndex] = useState(0);
   const [page, setPage] = useState(1);
   const [filterChannel, setFilterChannel] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleJobId, setScheduleJobId] = useState('');
+  const [cronExpression, setCronExpression] = useState('');
   const [newChannel, setNewChannel] = useState('');
   const [newFilterStatus, setNewFilterStatus] = useState('');
   const [newFilterBrand, setNewFilterBrand] = useState('');
+  const [newMaxRetries, setNewMaxRetries] = useState(3);
+  const [newCron, setNewCron] = useState('');
+  const [historyChannel, setHistoryChannel] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
   const size = 20;
 
   const { data: channels } = useQuery({
@@ -101,6 +120,12 @@ export default function SyncDashboard() {
     refetchInterval: 5000,
   });
 
+  const { data: historyData, isLoading: historyLoading } = useQuery({
+    queryKey: ['sync-channel-history', historyChannel, historyPage],
+    queryFn: () => getChannelSyncHistory(historyChannel, historyPage, size),
+    enabled: tabIndex === 1 && !!historyChannel,
+  });
+
   const createMutation = useMutation({
     mutationFn: (payload: SyncJobCreate) => createSyncJob(payload),
     onSuccess: () => {
@@ -109,6 +134,8 @@ export default function SyncDashboard() {
       setNewChannel('');
       setNewFilterStatus('');
       setNewFilterBrand('');
+      setNewMaxRetries(3);
+      setNewCron('');
     },
   });
 
@@ -117,16 +144,38 @@ export default function SyncDashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync-jobs'] }),
   });
 
+  const scheduleMutation = useMutation({
+    mutationFn: ({ jobId, data }: { jobId: string; data: SyncScheduleUpdate }) =>
+      updateJobSchedule(jobId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sync-jobs'] });
+      setScheduleDialogOpen(false);
+    },
+  });
+
   const handleCreate = () => {
     if (!newChannel) return;
     const filters: Record<string, string> = {};
     if (newFilterStatus) filters.status = newFilterStatus;
     if (newFilterBrand) filters.brand = newFilterBrand;
-    createMutation.mutate({ channel: newChannel, filters });
+    createMutation.mutate({
+      channel: newChannel,
+      filters,
+      max_retries: newMaxRetries,
+      cron_expression: newCron || null,
+    });
+  };
+
+  const openScheduleDialog = (job: SyncJob) => {
+    setScheduleJobId(job.id);
+    setCronExpression(job.cron_expression ?? '');
+    setScheduleDialogOpen(true);
   };
 
   const items = data?.items ?? [];
   const totalPages = data?.pages ?? 1;
+  const historyItems = historyData?.items ?? [];
+  const historyTotalPages = historyData?.pages ?? 1;
 
   return (
     <Box>
@@ -142,132 +191,256 @@ export default function SyncDashboard() {
         </Box>
       </Box>
 
-      <Box display="flex" gap={2} mb={2}>
-        <FormControl size="small" sx={{ minWidth: 140 }}>
-          <InputLabel>Canal</InputLabel>
-          <Select
-            value={filterChannel}
-            label="Canal"
-            onChange={(e) => { setFilterChannel(e.target.value); setPage(1); }}
-          >
-            <MenuItem value="">Todos</MenuItem>
-            {(channels ?? []).map((ch) => (
-              <MenuItem key={ch} value={ch}>{ch}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <FormControl size="small" sx={{ minWidth: 140 }}>
-          <InputLabel>Estado</InputLabel>
-          <Select
-            value={filterStatus}
-            label="Estado"
-            onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
-          >
-            <MenuItem value="">Todos</MenuItem>
-            <MenuItem value="queued">queued</MenuItem>
-            <MenuItem value="running">running</MenuItem>
-            <MenuItem value="done">done</MenuItem>
-            <MenuItem value="failed">failed</MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
+      <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} sx={{ mb: 2 }}>
+        <Tab label="Jobs" />
+        <Tab label="Historial por canal" />
+      </Tabs>
 
-      {isLoading ? (
-        <Box display="flex" justifyContent="center" mt={4}>
-          <CircularProgress />
-        </Box>
-      ) : (
+      {/* ==================== TAB 0: Jobs ==================== */}
+      {tabIndex === 0 && (
         <>
-          <TableContainer component={Paper}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Canal</TableCell>
-                  <TableCell>Estado</TableCell>
-                  <TableCell>Filtros</TableCell>
-                  <TableCell>Metricas</TableCell>
-                  <TableCell>Iniciado</TableCell>
-                  <TableCell>Finalizado</TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {items.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} align="center">
-                      <Typography variant="body2" color="text.secondary">
-                        No hay sincronizaciones registradas
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-                {items.map((job) => (
-                  <TableRow key={job.id} hover>
-                    <TableCell>
-                      <Chip label={job.channel} size="small" variant="outlined" />
-                    </TableCell>
-                    <TableCell>
-                      <StatusChip status={job.status} />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption">
-                        {Object.entries(job.filters || {})
-                          .filter(([, v]) => v)
-                          .map(([k, v]) => `${k}: ${v}`)
-                          .join(', ') || '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <MetricsSummary job={job} />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{formatDate(job.started_at)}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{formatDate(job.finished_at)}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      {(job.status === 'failed' || job.status === 'done') && (
-                        <Tooltip title="Reintentar">
-                          <IconButton
-                            size="small"
-                            onClick={() => retryMutation.mutate(job.id)}
-                            disabled={retryMutation.isPending}
-                          >
-                            <Replay fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                  </TableRow>
+          <Box display="flex" gap={2} mb={2}>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>Canal</InputLabel>
+              <Select
+                value={filterChannel}
+                label="Canal"
+                onChange={(e) => { setFilterChannel(e.target.value); setPage(1); }}
+              >
+                <MenuItem value="">Todos</MenuItem>
+                {(channels ?? []).map((ch) => (
+                  <MenuItem key={ch} value={ch}>{ch}</MenuItem>
                 ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          {items.length > 0 && items.some((j) => j.error_message) && (
-            <Box mt={2}>
-              {items
-                .filter((j) => j.error_message)
-                .map((j) => (
-                  <Alert key={j.id} severity="error" sx={{ mb: 1 }}>
-                    <strong>{j.channel}</strong>: {j.error_message}
-                  </Alert>
-                ))}
-            </Box>
-          )}
-
-          <Box display="flex" justifyContent="flex-end" alignItems="center" gap={1} mt={2}>
-            <Typography variant="body2">
-              Pagina {page} de {totalPages} ({data?.total ?? 0} jobs)
-            </Typography>
-            <IconButton size="small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              <ChevronLeft />
-            </IconButton>
-            <IconButton size="small" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-              <ChevronRight />
-            </IconButton>
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>Estado</InputLabel>
+              <Select
+                value={filterStatus}
+                label="Estado"
+                onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
+              >
+                <MenuItem value="">Todos</MenuItem>
+                <MenuItem value="queued">queued</MenuItem>
+                <MenuItem value="running">running</MenuItem>
+                <MenuItem value="done">done</MenuItem>
+                <MenuItem value="failed">failed</MenuItem>
+                <MenuItem value="retry_pending">retry_pending</MenuItem>
+              </Select>
+            </FormControl>
           </Box>
+
+          {isLoading ? (
+            <Box display="flex" justifyContent="center" mt={4}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <>
+              <TableContainer component={Paper}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Canal</TableCell>
+                      <TableCell>Estado</TableCell>
+                      <TableCell>Filtros</TableCell>
+                      <TableCell>Metricas</TableCell>
+                      <TableCell>Reintentos</TableCell>
+                      <TableCell>Programacion</TableCell>
+                      <TableCell>Iniciado</TableCell>
+                      <TableCell>Finalizado</TableCell>
+                      <TableCell />
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {items.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={9} align="center">
+                          <Typography variant="body2" color="text.secondary">
+                            No hay sincronizaciones registradas
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {items.map((job) => (
+                      <TableRow key={job.id} hover>
+                        <TableCell>
+                          <Chip label={job.channel} size="small" variant="outlined" />
+                        </TableCell>
+                        <TableCell>
+                          <StatusChip status={job.status} />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption">
+                            {Object.entries(job.filters || {})
+                              .filter(([, v]) => v)
+                              .map(([k, v]) => `${k}: ${v}`)
+                              .join(', ') || '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <MetricsSummary job={job} />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {job.retry_count}/{job.max_retries}
+                          </Typography>
+                          {job.next_retry_at && (
+                            <Typography variant="caption" color="warning.main">
+                              Reintento: {formatDate(job.next_retry_at)}
+                            </Typography>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {job.scheduled ? (
+                            <Box>
+                              <Chip label={job.cron_expression ?? 'cron'} size="small" color="primary" variant="outlined" />
+                              {job.next_run_at && (
+                                <Typography variant="caption" display="block">
+                                  Prox: {formatDate(job.next_run_at)}
+                                </Typography>
+                              )}
+                            </Box>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">-</Typography>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">{formatDate(job.started_at)}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">{formatDate(job.finished_at)}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Box display="flex" gap={0.5}>
+                            {(job.status === 'failed' || job.status === 'done' || job.status === 'retry_pending') && (
+                              <Tooltip title="Reintentar">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => retryMutation.mutate(job.id)}
+                                  disabled={retryMutation.isPending}
+                                >
+                                  <Replay fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                            <Tooltip title="Programar">
+                              <IconButton
+                                size="small"
+                                onClick={() => openScheduleDialog(job)}
+                              >
+                                <Schedule fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              {items.length > 0 && items.some((j) => j.error_message) && (
+                <Box mt={2}>
+                  {items
+                    .filter((j) => j.error_message)
+                    .map((j) => (
+                      <Alert key={j.id} severity="error" sx={{ mb: 1 }}>
+                        <strong>{j.channel}</strong>: {j.error_message}
+                      </Alert>
+                    ))}
+                </Box>
+              )}
+
+              <Box display="flex" justifyContent="flex-end" alignItems="center" gap={1} mt={2}>
+                <Typography variant="body2">
+                  Pagina {page} de {totalPages} ({data?.total ?? 0} jobs)
+                </Typography>
+                <IconButton size="small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                  <ChevronLeft />
+                </IconButton>
+                <IconButton size="small" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                  <ChevronRight />
+                </IconButton>
+              </Box>
+            </>
+          )}
+        </>
+      )}
+
+      {/* ==================== TAB 1: Historial por canal ==================== */}
+      {tabIndex === 1 && (
+        <>
+          <Box display="flex" gap={2} mb={2}>
+            <FormControl size="small" sx={{ minWidth: 180 }}>
+              <InputLabel>Canal</InputLabel>
+              <Select
+                value={historyChannel}
+                label="Canal"
+                onChange={(e) => { setHistoryChannel(e.target.value); setHistoryPage(1); }}
+              >
+                <MenuItem value="">Seleccionar canal</MenuItem>
+                {(channels ?? []).map((ch) => (
+                  <MenuItem key={ch} value={ch}>{ch}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          {!historyChannel ? (
+            <Typography color="text.secondary">Selecciona un canal para ver el historial de publicaciones.</Typography>
+          ) : historyLoading ? (
+            <Box display="flex" justifyContent="center" mt={4}><CircularProgress /></Box>
+          ) : (
+            <>
+              <TableContainer component={Paper}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>SKU</TableCell>
+                      <TableCell>Canal</TableCell>
+                      <TableCell>Estado</TableCell>
+                      <TableCell>Error</TableCell>
+                      <TableCell>Fecha sync</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {historyItems.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center">
+                          <Typography variant="body2" color="text.secondary">Sin registros</Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {historyItems.map((h) => (
+                      <TableRow key={h.id} hover>
+                        <TableCell>{h.sku}</TableCell>
+                        <TableCell><Chip label={h.channel} size="small" variant="outlined" /></TableCell>
+                        <TableCell><StatusChip status={h.status} /></TableCell>
+                        <TableCell>
+                          <Typography variant="caption" color="error">
+                            {h.error_message ?? '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{formatDate(h.synced_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              <Box display="flex" justifyContent="flex-end" alignItems="center" gap={1} mt={2}>
+                <Typography variant="body2">
+                  Pagina {historyPage} de {historyTotalPages} ({historyData?.total ?? 0} registros)
+                </Typography>
+                <IconButton size="small" disabled={historyPage <= 1} onClick={() => setHistoryPage((p) => p - 1)}>
+                  <ChevronLeft />
+                </IconButton>
+                <IconButton size="small" disabled={historyPage >= historyTotalPages} onClick={() => setHistoryPage((p) => p + 1)}>
+                  <ChevronRight />
+                </IconButton>
+              </Box>
+            </>
+          )}
         </>
       )}
 
@@ -314,6 +487,28 @@ export default function SyncDashboard() {
               onChange={(e) => setNewFilterBrand(e.target.value)}
               placeholder="Filtrar por marca (opcional)"
             />
+
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>
+              Reintentos y programacion
+            </Typography>
+
+            <TextField
+              label="Max reintentos"
+              size="small"
+              type="number"
+              value={newMaxRetries}
+              onChange={(e) => setNewMaxRetries(Number(e.target.value))}
+              inputProps={{ min: 0, max: 10 }}
+            />
+
+            <TextField
+              label="Expresion cron (opcional)"
+              size="small"
+              value={newCron}
+              onChange={(e) => setNewCron(e.target.value)}
+              placeholder="0 */6 * * * (cada 6 horas)"
+              helperText="Dejar vacio para ejecucion unica"
+            />
           </Box>
         </DialogContent>
         <DialogActions>
@@ -324,6 +519,46 @@ export default function SyncDashboard() {
             disabled={!newChannel || createMutation.isPending}
           >
             Lanzar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog para programar job existente */}
+      <Dialog open={scheduleDialogOpen} onClose={() => setScheduleDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Programar sincronizacion</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            <TextField
+              label="Expresion cron"
+              size="small"
+              value={cronExpression}
+              onChange={(e) => setCronExpression(e.target.value)}
+              placeholder="0 */6 * * *"
+              helperText="Ej: 0 */6 * * * (cada 6h), 0 0 * * * (diario a medianoche)"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            color="error"
+            onClick={() => scheduleMutation.mutate({
+              jobId: scheduleJobId,
+              data: { cron_expression: null, enabled: false },
+            })}
+            disabled={scheduleMutation.isPending}
+          >
+            Desactivar
+          </Button>
+          <Button onClick={() => setScheduleDialogOpen(false)}>Cancelar</Button>
+          <Button
+            variant="contained"
+            onClick={() => scheduleMutation.mutate({
+              jobId: scheduleJobId,
+              data: { cron_expression: cronExpression || null, enabled: !!cronExpression },
+            })}
+            disabled={!cronExpression || scheduleMutation.isPending}
+          >
+            Guardar
           </Button>
         </DialogActions>
       </Dialog>

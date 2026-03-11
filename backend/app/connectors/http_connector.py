@@ -4,7 +4,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connectors.base import BaseConnector, ConnectorResult
+from app.connectors.base import BaseConnector, ConnectorResult, ProductSyncDetail
 from app.models.product import Product
 
 
@@ -46,11 +46,16 @@ class HttpConnector(BaseConnector):
                     resp = await client.post(endpoint, json=payload)
                     if resp.status_code < 400:
                         result.exported += 1
+                        result.product_details.append(ProductSyncDetail(sku=p.sku, status="published"))
                     else:
                         result.skipped += 1
-                        result.errors.append(f"{p.sku}: HTTP {resp.status_code}")
+                        err = f"{p.sku}: HTTP {resp.status_code}"
+                        result.errors.append(err)
+                        result.product_details.append(ProductSyncDetail(sku=p.sku, status="failed", error=err))
                 except httpx.HTTPError as exc:
                     result.skipped += 1
-                    result.errors.append(f"{p.sku}: {exc}")
+                    err = f"{p.sku}: {exc}"
+                    result.errors.append(err)
+                    result.product_details.append(ProductSyncDetail(sku=p.sku, status="failed", error=str(exc)))
 
         return result

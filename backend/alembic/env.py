@@ -9,7 +9,21 @@ from app.core.config import settings
 from app.models.base import Base
 
 # Import all models to register them with Base.metadata
-from app.models import audit, category, media, product, sync_job, user  # noqa: F401
+from app.models import (  # noqa: F401
+    audit,
+    category,
+    import_job,
+    mapping_template,
+    media,
+    product,
+    product_comment,
+    product_sync_history,
+    quality_rule,
+    saved_view,
+    sync_job,
+    user,
+    attribute_family,
+)
 
 config = context.config
 

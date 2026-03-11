@@ -21,6 +21,12 @@ import {
   Paper,
   Tab,
   Tabs,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -46,6 +52,8 @@ import { listCategories } from '../../api/categories';
 import type { Category } from '../../types/category';
 import { listFamilies, listDefinitions } from '../../api/attributes';
 import type { AttributeFamily, AttributeDefinition } from '../../api/attributes';
+import { getProductSyncHistory, getProductSyncStatus } from '../../api/sync';
+import type { ProductSyncHistory, ProductSyncStatus } from '../../types/sync';
 
 const DIMENSION_LABELS: Record<string, string> = {
   brand: 'Marca',
@@ -107,6 +115,20 @@ export default function ProductDetail() {
   const [replyText, setReplyText] = useState('');
   const [replies, setReplies] = useState<Record<string, VersionComment[]>>({});
   const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+
+  // Sync history
+  const [syncHistory, setSyncHistory] = useState<ProductSyncHistory[]>([]);
+  const [syncStatuses, setSyncStatuses] = useState<ProductSyncStatus[]>([]);
+
+  const refreshSyncHistory = useCallback(async () => {
+    if (!sku) return;
+    const [hist, st] = await Promise.all([
+      getProductSyncHistory(sku).catch(() => ({ items: [], total: 0, page: 1, size: 20, pages: 0 })),
+      getProductSyncStatus(sku).catch(() => []),
+    ]);
+    setSyncHistory(hist.items);
+    setSyncStatuses(st);
+  }, [sku]);
 
   const refreshProductComments = useCallback(async () => {
     if (!sku) return;
@@ -197,6 +219,8 @@ export default function ProductDetail() {
             setFamilyDefs(defs);
           } catch { /* ignore */ }
         }
+        // Load sync history
+        await refreshSyncHistory();
       })
       .catch(() => navigate('/products'))
       .finally(() => setLoading(false));
@@ -604,6 +628,7 @@ export default function ProductDetail() {
           <Tab label="Calidad" />
           <Tab label={`Comentarios (${productComments.length})`} />
           <Tab label="Historial" />
+          <Tab label="Sync" />
         </Tabs>
       </Paper>
 
@@ -1258,6 +1283,83 @@ export default function ProductDetail() {
               <Button onClick={() => setShowDiffDialog(false)}>Cerrar</Button>
             </DialogActions>
           </Dialog>
+        </Paper>
+      )}
+
+      {tab === 8 && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>Estado de publicacion por canal</Typography>
+
+          {syncStatuses.length === 0 ? (
+            <Typography color="text.secondary">Este producto no ha sido publicado en ningun canal.</Typography>
+          ) : (
+            <TableContainer component={Paper} variant="outlined" sx={{ mb: 3 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Canal</TableCell>
+                    <TableCell>Estado</TableCell>
+                    <TableCell>Ultima sync</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {syncStatuses.map((s) => (
+                    <TableRow key={s.channel}>
+                      <TableCell><Chip label={s.channel} size="small" variant="outlined" /></TableCell>
+                      <TableCell>
+                        <Chip
+                          label={s.status}
+                          size="small"
+                          color={s.status === 'published' ? 'success' : s.status === 'failed' ? 'error' : 'default'}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {s.synced_at ? new Date(s.synced_at).toLocaleString('es-ES') : '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+
+          <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>Historial de sincronizaciones</Typography>
+          {syncHistory.length === 0 ? (
+            <Typography color="text.secondary">Sin historial de sincronizacion.</Typography>
+          ) : (
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Canal</TableCell>
+                    <TableCell>Estado</TableCell>
+                    <TableCell>Error</TableCell>
+                    <TableCell>Fecha</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {syncHistory.map((h) => (
+                    <TableRow key={h.id} hover>
+                      <TableCell><Chip label={h.channel} size="small" variant="outlined" /></TableCell>
+                      <TableCell>
+                        <Chip
+                          label={h.status}
+                          size="small"
+                          color={h.status === 'published' ? 'success' : h.status === 'failed' ? 'error' : 'default'}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption" color="error">{h.error_message ?? '-'}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        {h.synced_at ? new Date(h.synced_at).toLocaleString('es-ES') : '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
         </Paper>
       )}
     </Box>

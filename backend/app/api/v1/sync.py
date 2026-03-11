@@ -6,7 +6,8 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
-from app.schemas.sync_job import SyncJobCreate, SyncJobRead
+from app.schemas.product_sync_history import ProductSyncHistoryRead, ProductSyncStatusRead
+from app.schemas.sync_job import SyncJobCreate, SyncJobRead, SyncScheduleUpdate
 from app.services import sync_service
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -68,4 +69,51 @@ async def retry_sync_job(
     background_tasks.add_task(sync_service.run_sync_job, str(job.id))
 
     return await sync_service.get_sync_job(db, str(job.id))
+
+
+@router.put("/jobs/{job_id}/schedule", response_model=SyncJobRead)
+async def update_job_schedule(
+    job_id: str,
+    body: SyncScheduleUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles("admin")),
+):
+    await sync_service.update_schedule(db, job_id, body.cron_expression, body.enabled)
+    await db.commit()
+    return await sync_service.get_sync_job(db, job_id)
+
+
+# ---------------------------------------------------------------------------
+# Product sync history endpoints
+# ---------------------------------------------------------------------------
+@router.get("/history/product/{sku}", response_model=PaginatedResponse[ProductSyncHistoryRead])
+async def get_product_sync_history(
+    sku: str,
+    channel: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    return await sync_service.get_product_sync_history(db, sku, channel=channel, page=page, size=size)
+
+
+@router.get("/history/product/{sku}/status", response_model=list[ProductSyncStatusRead])
+async def get_product_sync_status(
+    sku: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    return await sync_service.get_product_sync_status(db, sku)
+
+
+@router.get("/history/channel/{channel}", response_model=PaginatedResponse[ProductSyncHistoryRead])
+async def get_channel_sync_history(
+    channel: str,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    return await sync_service.get_channel_sync_history(db, channel, page=page, size=size)
 
