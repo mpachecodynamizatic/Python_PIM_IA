@@ -7,7 +7,11 @@ export interface SyncJobFilters {
 
 export interface SyncJob {
   id: string;
-  channel: string;
+  channel_id: string;
+  channel_code: string;
+  channel_name: string;
+  connection_type: string | null;
+  connection_config: Record<string, unknown>;
   status: string;
   filters: SyncJobFilters;
   started_at: string | null;
@@ -30,7 +34,9 @@ export interface SyncJob {
 }
 
 export interface SyncJobCreate {
-  channel: string;
+  channel_id: string;
+  connection_type?: string | null;
+  connection_config?: Record<string, unknown> | null;
   filters?: SyncJobFilters;
   max_retries?: number;
   cron_expression?: string | null;
