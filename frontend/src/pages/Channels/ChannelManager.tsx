@@ -8,9 +8,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
   FormControlLabel,
   IconButton,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Switch,
   Table,
   TableBody,
@@ -29,12 +33,174 @@ import type { Channel } from '../../types/product';
 
 type ChannelCreate = Omit<Channel, 'id' | 'created_at' | 'updated_at'>;
 
+const CONN_TYPE_LABELS: Record<string, string> = {
+  ftp: 'FTP',
+  ssh: 'SSH / SFTP',
+  http_post: 'HTTP POST',
+};
+
 const EMPTY_FORM: ChannelCreate = {
   name: '',
   code: '',
   description: null,
   active: true,
+  connection_type: null,
+  connection_config: {},
 };
+
+function ConnectionConfigFields({
+  connType,
+  config,
+  onChange,
+}: {
+  connType: string | null;
+  config: Record<string, unknown>;
+  onChange: (updated: Record<string, unknown>) => void;
+}) {
+  if (!connType) return null;
+  const set = (key: string, val: unknown) => onChange({ ...config, [key]: val });
+
+  if (connType === 'ftp' || connType === 'ssh') {
+    return (
+      <Box display="flex" flexDirection="column" gap={1.5}>
+        <Box display="flex" gap={1}>
+          <TextField
+            label="Host"
+            size="small"
+            value={(config.host as string) ?? ''}
+            onChange={(e) => set('host', e.target.value)}
+            sx={{ flex: 3 }}
+          />
+          <TextField
+            label="Puerto"
+            size="small"
+            type="number"
+            value={(config.port as number) ?? (connType === 'ssh' ? 22 : 21)}
+            onChange={(e) => set('port', Number(e.target.value))}
+            sx={{ flex: 1 }}
+          />
+        </Box>
+        <Box display="flex" gap={1}>
+          <TextField
+            label="Usuario"
+            size="small"
+            value={(config.username as string) ?? ''}
+            onChange={(e) => set('username', e.target.value)}
+            sx={{ flex: 1 }}
+          />
+          <TextField
+            label="Contraseña"
+            size="small"
+            type="password"
+            value={(config.password as string) ?? ''}
+            onChange={(e) => set('password', e.target.value)}
+            sx={{ flex: 1 }}
+          />
+        </Box>
+        <TextField
+          label="Ruta remota"
+          size="small"
+          value={(config.remote_path as string) ?? '/'}
+          onChange={(e) => set('remote_path', e.target.value)}
+          placeholder="/ruta/remota/"
+          fullWidth
+        />
+        {connType === 'ftp' && (
+          <FormControlLabel
+            control={
+              <Switch
+                checked={(config.passive as boolean) ?? true}
+                onChange={(e) => set('passive', e.target.checked)}
+                size="small"
+              />
+            }
+            label="Modo pasivo"
+          />
+        )}
+        {connType === 'ssh' && (
+          <TextField
+            label="Clave privada SSH (opcional)"
+            size="small"
+            multiline
+            rows={2}
+            value={(config.private_key as string) ?? ''}
+            onChange={(e) => set('private_key', e.target.value || null)}
+            placeholder="-----BEGIN RSA PRIVATE KEY-----"
+            fullWidth
+          />
+        )}
+      </Box>
+    );
+  }
+
+  if (connType === 'http_post') {
+    const authType = (config.auth_type as string) ?? 'none';
+    return (
+      <Box display="flex" flexDirection="column" gap={1.5}>
+        <TextField
+          label="URL del endpoint"
+          size="small"
+          value={(config.url as string) ?? ''}
+          onChange={(e) => set('url', e.target.value)}
+          placeholder="https://api.example.com/products"
+          fullWidth
+        />
+        <Box display="flex" gap={1}>
+          <TextField
+            label="Timeout (s)"
+            size="small"
+            type="number"
+            value={(config.timeout as number) ?? 30}
+            onChange={(e) => set('timeout', Number(e.target.value))}
+            sx={{ width: 120 }}
+          />
+          <FormControl size="small" sx={{ flex: 1 }}>
+            <InputLabel>Autenticación</InputLabel>
+            <Select
+              value={authType}
+              label="Autenticación"
+              onChange={(e) => set('auth_type', e.target.value)}
+            >
+              <MenuItem value="none">Sin autenticación</MenuItem>
+              <MenuItem value="basic">Basic</MenuItem>
+              <MenuItem value="bearer">Bearer token</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+        {authType === 'bearer' && (
+          <TextField
+            label="Token"
+            size="small"
+            value={(config.token as string) ?? ''}
+            onChange={(e) => set('token', e.target.value)}
+            fullWidth
+          />
+        )}
+        {authType === 'basic' && (
+          <Box display="flex" gap={1}>
+            <TextField
+              label="Usuario"
+              size="small"
+              value={(config.username as string) ?? ''}
+              onChange={(e) => set('username', e.target.value)}
+              sx={{ flex: 1 }}
+            />
+            <TextField
+              label="Contraseña"
+              size="small"
+              type="password"
+              value={(config.password as string) ?? ''}
+              onChange={(e) => set('password', e.target.value)}
+              sx={{ flex: 1 }}
+            />
+          </Box>
+        )}
+      </Box>
+    );
+  }
+
+  return null;
+}
 
 export default function ChannelManager() {
   const queryClient = useQueryClient();
@@ -119,6 +285,7 @@ export default function ChannelManager() {
               <TableCell>Nombre</TableCell>
               <TableCell>Codigo</TableCell>
               <TableCell>Descripcion</TableCell>
+              <TableCell>Conexión</TableCell>
               <TableCell>Estado</TableCell>
               <TableCell />
             </TableRow>
@@ -150,6 +317,18 @@ export default function ChannelManager() {
                   <Typography variant="body2" color="text.secondary">
                     {channel.description || '-'}
                   </Typography>
+                </TableCell>
+                <TableCell>
+                  {channel.connection_type ? (
+                    <Chip
+                      label={CONN_TYPE_LABELS[channel.connection_type] ?? channel.connection_type}
+                      size="small"
+                      variant="outlined"
+                      color="primary"
+                    />
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">-</Typography>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Chip
@@ -202,6 +381,30 @@ export default function ChannelManager() {
               multiline
               rows={2}
             />
+            <FormControl fullWidth size="small">
+              <InputLabel>Tipo de conexión</InputLabel>
+              <Select
+                value={newForm.connection_type ?? ''}
+                label="Tipo de conexión"
+                onChange={(e) => setNewForm((p) => ({
+                  ...p,
+                  connection_type: e.target.value || null,
+                  connection_config: {},
+                }))}
+              >
+                <MenuItem value="">Sin conexión</MenuItem>
+                <MenuItem value="ftp">FTP</MenuItem>
+                <MenuItem value="ssh">SSH / SFTP</MenuItem>
+                <MenuItem value="http_post">HTTP POST</MenuItem>
+              </Select>
+            </FormControl>
+            {newForm.connection_type && (
+              <ConnectionConfigFields
+                connType={newForm.connection_type}
+                config={newForm.connection_config ?? {}}
+                onChange={(cfg) => setNewForm((p) => ({ ...p, connection_config: cfg }))}
+              />
+            )}
             <FormControlLabel
               control={
                 <Switch
@@ -244,6 +447,30 @@ export default function ChannelManager() {
               multiline
               rows={2}
             />
+            <FormControl fullWidth size="small">
+              <InputLabel>Tipo de conexión</InputLabel>
+              <Select
+                value={editForm.connection_type ?? ''}
+                label="Tipo de conexión"
+                onChange={(e) => setEditForm((p) => ({
+                  ...p,
+                  connection_type: e.target.value || null,
+                  connection_config: {},
+                }))}
+              >
+                <MenuItem value="">Sin conexión</MenuItem>
+                <MenuItem value="ftp">FTP</MenuItem>
+                <MenuItem value="ssh">SSH / SFTP</MenuItem>
+                <MenuItem value="http_post">HTTP POST</MenuItem>
+              </Select>
+            </FormControl>
+            {editForm.connection_type && (
+              <ConnectionConfigFields
+                connType={editForm.connection_type ?? null}
+                config={(editForm.connection_config ?? {}) as Record<string, unknown>}
+                onChange={(cfg) => setEditForm((p) => ({ ...p, connection_config: cfg }))}
+              />
+            )}
             <FormControlLabel
               control={
                 <Switch

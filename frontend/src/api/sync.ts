@@ -7,9 +7,10 @@ import type {
   ProductSyncHistoryList,
   ProductSyncStatus,
 } from '../types/sync';
+import type { Channel } from '../types/product';
 
-export async function getChannels(): Promise<string[]> {
-  const response = await client.get<string[]>('/sync/channels');
+export async function getChannels(): Promise<Channel[]> {
+  const response = await client.get<Channel[]>('/sync/channels');
   return response.data;
 }
 

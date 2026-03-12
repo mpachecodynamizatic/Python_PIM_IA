@@ -1,4 +1,5 @@
-- Revisar la exportacion, no muestra todos los productos.
+- Revisar la exportacion, no muestra todos los campos de productos.
+- Añade la funcionalidad de exportar e importar tambien en Marcas, Proveedores, Canales, Taxonomia
 - Listado de proveedores, añadir accion para abrir el listado de productos que tiene ese proveedor.
 - Listado de marcas, añadir accion para abrir el listado de produtos que son de esa marca.
 - Listado de taxonomia, añadir accion para abrir el listado de productos que son de esa taxonomia. Se seleccionamos un padre mostrar todos los productos que su taxonomia es de uno de sus hijos.

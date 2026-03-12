@@ -38,12 +38,25 @@ export async function listChannelCatalog(activeOnly = false): Promise<Channel[]>
   return r.data;
 }
 
-export async function createChannelCatalog(data: { name: string; code: string; description?: string; active?: boolean }): Promise<Channel> {
+export async function createChannelCatalog(data: {
+  name: string;
+  code: string;
+  description?: string | null;
+  active?: boolean;
+  connection_type?: string | null;
+  connection_config?: Record<string, unknown>;
+}): Promise<Channel> {
   const r = await client.post<Channel>('/channels', data);
   return r.data;
 }
 
-export async function updateChannelCatalog(id: string, data: { name?: string; description?: string; active?: boolean }): Promise<Channel> {
+export async function updateChannelCatalog(id: string, data: {
+  name?: string;
+  description?: string | null;
+  active?: boolean;
+  connection_type?: string | null;
+  connection_config?: Record<string, unknown>;
+}): Promise<Channel> {
   const r = await client.patch<Channel>(`/channels/${id}`, data);
   return r.data;
 }

@@ -19,7 +19,7 @@ from app.services.sync_service import (
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers / fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture
 async def sample_category(client: AsyncClient, auth_headers):
@@ -54,6 +54,49 @@ async def ready_product(client: AsyncClient, auth_headers, sample_product):
         headers=auth_headers,
     )
     assert resp.status_code == 200
+    return resp.json()
+
+
+@pytest.fixture
+async def sync_channel(client: AsyncClient, auth_headers):
+    """Creates a test channel (code=csv) for sync job tests."""
+    resp = await client.post(
+        "/api/v1/channels",
+        json={
+            "name": "Test CSV Channel",
+            "code": "csv",
+            "connection_type": "ftp",
+            "connection_config": {
+                "host": "test.local", "port": 21,
+                "username": "test", "password": "",
+                "remote_path": "/", "passive": True,
+            },
+            "active": True,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201, f"Failed to create channel: {resp.text}"
+    return resp.json()
+
+
+@pytest.fixture
+async def sync_channel_shopify(client: AsyncClient, auth_headers):
+    """Creates a shopify-like channel for tests that need a different channel."""
+    resp = await client.post(
+        "/api/v1/channels",
+        json={
+            "name": "Shopify Test",
+            "code": "shopify",
+            "connection_type": "http_post",
+            "connection_config": {
+                "url": "https://test.myshopify.com/api",
+                "auth_type": "bearer", "token": "",
+            },
+            "active": True,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201, f"Failed to create shopify channel: {resp.text}"
     return resp.json()
 
 
@@ -93,41 +136,40 @@ class TestHelpers:
 # API tests: channels
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_list_channels(client: AsyncClient, auth_headers):
+async def test_list_channels(client: AsyncClient, auth_headers, sync_channel):
     resp = await client.get("/api/v1/sync/channels", headers=auth_headers)
     assert resp.status_code == 200
     channels = resp.json()
     assert isinstance(channels, list)
-    assert "csv" in channels
-    assert "shopify" in channels
-    assert "amazon" in channels
-    assert "woocommerce" in channels
+    # Channel catalog returns Channel objects — verify by code field
+    codes = [ch["code"] for ch in channels]
+    assert "csv" in codes
 
 
 # ---------------------------------------------------------------------------
 # API tests: create sync job with scheduling
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_create_sync_job_basic(client: AsyncClient, auth_headers, ready_product):
+async def test_create_sync_job_basic(client: AsyncClient, auth_headers, ready_product, sync_channel):
     resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {}},
+        json={"channel_id": sync_channel["id"], "filters": {}},
         headers=auth_headers,
     )
     assert resp.status_code == 201
     data = resp.json()
-    assert data["channel"] == "csv"
+    assert data["channel_code"] == "csv"
     assert data["max_retries"] == 3
     assert data["retry_count"] == 0
     assert data["scheduled"] is False
 
 
 @pytest.mark.asyncio
-async def test_create_sync_job_with_cron(client: AsyncClient, auth_headers, ready_product):
+async def test_create_sync_job_with_cron(client: AsyncClient, auth_headers, ready_product, sync_channel_shopify):
     resp = await client.post(
         "/api/v1/sync/jobs",
         json={
-            "channel": "shopify",
+            "channel_id": sync_channel_shopify["id"],
             "filters": {},
             "cron_expression": "0 */6 * * *",
         },
@@ -141,10 +183,10 @@ async def test_create_sync_job_with_cron(client: AsyncClient, auth_headers, read
 
 
 @pytest.mark.asyncio
-async def test_create_sync_job_with_max_retries(client: AsyncClient, auth_headers, ready_product):
+async def test_create_sync_job_with_max_retries(client: AsyncClient, auth_headers, ready_product, sync_channel):
     resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {}, "max_retries": 5},
+        json={"channel_id": sync_channel["id"], "filters": {}, "max_retries": 5},
         headers=auth_headers,
     )
     assert resp.status_code == 201
@@ -155,20 +197,20 @@ async def test_create_sync_job_with_max_retries(client: AsyncClient, auth_header
 async def test_create_sync_job_invalid_channel(client: AsyncClient, auth_headers):
     resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "nonexistent", "filters": {}},
+        json={"channel_id": "00000000-0000-0000-0000-000000000000", "filters": {}},
         headers=auth_headers,
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------
 # API tests: list / get jobs
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_list_sync_jobs(client: AsyncClient, auth_headers, ready_product):
+async def test_list_sync_jobs(client: AsyncClient, auth_headers, ready_product, sync_channel):
     await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {}},
+        json={"channel_id": sync_channel["id"], "filters": {}},
         headers=auth_headers,
     )
     resp = await client.get("/api/v1/sync/jobs", headers=auth_headers)
@@ -178,10 +220,10 @@ async def test_list_sync_jobs(client: AsyncClient, auth_headers, ready_product):
 
 
 @pytest.mark.asyncio
-async def test_get_sync_job(client: AsyncClient, auth_headers, ready_product):
+async def test_get_sync_job(client: AsyncClient, auth_headers, ready_product, sync_channel):
     create_resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {}},
+        json={"channel_id": sync_channel["id"], "filters": {}},
         headers=auth_headers,
     )
     job_id = create_resp.json()["id"]
@@ -200,10 +242,10 @@ async def test_get_sync_job_not_found(client: AsyncClient, auth_headers):
 # API tests: schedule update
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_update_schedule(client: AsyncClient, auth_headers, ready_product):
+async def test_update_schedule(client: AsyncClient, auth_headers, ready_product, sync_channel):
     create_resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {}},
+        json={"channel_id": sync_channel["id"], "filters": {}},
         headers=auth_headers,
     )
     job_id = create_resp.json()["id"]
@@ -221,10 +263,10 @@ async def test_update_schedule(client: AsyncClient, auth_headers, ready_product)
 
 
 @pytest.mark.asyncio
-async def test_disable_schedule(client: AsyncClient, auth_headers, ready_product):
+async def test_disable_schedule(client: AsyncClient, auth_headers, ready_product, sync_channel):
     create_resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {}, "cron_expression": "0 0 * * *"},
+        json={"channel_id": sync_channel["id"], "filters": {}, "cron_expression": "0 0 * * *"},
         headers=auth_headers,
     )
     job_id = create_resp.json()["id"]
@@ -244,10 +286,10 @@ async def test_disable_schedule(client: AsyncClient, auth_headers, ready_product
 # API tests: retry
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_retry_sync_job(client: AsyncClient, auth_headers, db_session: AsyncSession, ready_product):
+async def test_retry_sync_job(client: AsyncClient, auth_headers, db_session: AsyncSession, ready_product, sync_channel):
     create_resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {}},
+        json={"channel_id": sync_channel["id"], "filters": {}},
         headers=auth_headers,
     )
     job_id = create_resp.json()["id"]
@@ -267,10 +309,10 @@ async def test_retry_sync_job(client: AsyncClient, auth_headers, db_session: Asy
 
 
 @pytest.mark.asyncio
-async def test_retry_not_allowed_for_queued(client: AsyncClient, auth_headers, db_session, ready_product):
+async def test_retry_not_allowed_for_queued(client: AsyncClient, auth_headers, db_session, ready_product, sync_channel):
     create_resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {}},
+        json={"channel_id": sync_channel["id"], "filters": {}},
         headers=auth_headers,
     )
     job_id = create_resp.json()["id"]
@@ -292,7 +334,7 @@ async def test_retry_not_allowed_for_queued(client: AsyncClient, auth_headers, d
 # Service tests: run_sync_job records history
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_run_sync_job_records_history(client: AsyncClient, auth_headers, ready_product):
+async def test_run_sync_job_records_history(client: AsyncClient, auth_headers, ready_product, sync_channel):
     """When a sync job runs, it creates ProductSyncHistory records."""
     from tests.conftest import TestSessionLocal
 
@@ -301,7 +343,7 @@ async def test_run_sync_job_records_history(client: AsyncClient, auth_headers, r
     # Create and trigger job via API (background task runs it)
     create_resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {"status": "ready"}},
+        json={"channel_id": sync_channel["id"], "filters": {"status": "ready"}},
         headers=auth_headers,
     )
     assert create_resp.status_code == 201
@@ -330,19 +372,19 @@ async def test_run_sync_job_records_history(client: AsyncClient, auth_headers, r
 # Service tests: auto-retry on failure
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_auto_retry_on_failure(db_session: AsyncSession, ready_product):
+async def test_auto_retry_on_failure(db_session: AsyncSession, ready_product, sync_channel):
     """When a connector raises, the job moves to retry_pending with incremented retry_count."""
     from app.services import sync_service
     from app.schemas.sync_job import SyncJobCreate
 
     job = await sync_service.create_sync_job(
-        db_session, SyncJobCreate(channel="csv", filters={}, max_retries=2)
+        db_session, SyncJobCreate(channel_id=sync_channel["id"], filters={}, max_retries=2)
     )
     await db_session.commit()
     job_id = str(job.id)
 
-    # Patch the CSV connector to raise
-    with patch("app.services.sync_service.get_connector") as mock_get:
+    # Patch the connector dispatcher to return a failing connector
+    with patch("app.services.sync_service._get_connector_for_type") as mock_get:
         failing_connector = AsyncMock()
         failing_connector.run = AsyncMock(side_effect=RuntimeError("Simulated failure"))
         mock_get.return_value = failing_connector
@@ -361,20 +403,20 @@ async def test_auto_retry_on_failure(db_session: AsyncSession, ready_product):
 
 
 @pytest.mark.asyncio
-async def test_max_retries_exhausted(db_session: AsyncSession, ready_product):
+async def test_max_retries_exhausted(db_session: AsyncSession, ready_product, sync_channel):
     """After max retries exhausted, job stays as failed."""
     from app.services import sync_service
     from app.schemas.sync_job import SyncJobCreate
 
     job = await sync_service.create_sync_job(
-        db_session, SyncJobCreate(channel="csv", filters={}, max_retries=1)
+        db_session, SyncJobCreate(channel_id=sync_channel["id"], filters={}, max_retries=1)
     )
     # Pre-set retry_count so next failure exhausts retries
     job.retry_count = 1
     await db_session.commit()
     job_id = str(job.id)
 
-    with patch("app.services.sync_service.get_connector") as mock_get:
+    with patch("app.services.sync_service._get_connector_for_type") as mock_get:
         failing_connector = AsyncMock()
         failing_connector.run = AsyncMock(side_effect=RuntimeError("Fail"))
         mock_get.return_value = failing_connector
@@ -406,13 +448,13 @@ async def test_get_product_sync_history_empty(client: AsyncClient, auth_headers,
 
 
 @pytest.mark.asyncio
-async def test_get_product_sync_history_after_job(client: AsyncClient, auth_headers, ready_product):
+async def test_get_product_sync_history_after_job(client: AsyncClient, auth_headers, ready_product, sync_channel):
     sku = ready_product["sku"]
 
     # Run a sync job
     create_resp = await client.post(
         "/api/v1/sync/jobs",
-        json={"channel": "csv", "filters": {"status": "ready"}},
+        json={"channel_id": sync_channel["id"], "filters": {"status": "ready"}},
         headers=auth_headers,
     )
     assert create_resp.status_code == 201
@@ -428,7 +470,7 @@ async def test_get_product_sync_history_after_job(client: AsyncClient, auth_head
     # Should have history now
     assert data["total"] >= 1
     assert data["items"][0]["sku"] == sku
-    assert data["items"][0]["channel"] == "csv"
+    assert data["items"][0]["channel"] == "csv"  # channel_code stored in history
 
 
 @pytest.mark.asyncio
