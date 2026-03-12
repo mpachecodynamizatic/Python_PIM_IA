@@ -84,12 +84,14 @@ interface Filters {
   status: string;
   brand: string;
   category_id: string;
+  category_ids: string;
   created_from: string;
   created_to: string;
   updated_from: string;
   updated_to: string;
   has_media: string;
   has_i18n: string;
+  supplier_id: string;
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -97,12 +99,14 @@ const EMPTY_FILTERS: Filters = {
   status: '',
   brand: '',
   category_id: '',
+  category_ids: '',
   created_from: '',
   created_to: '',
   updated_from: '',
   updated_to: '',
   has_media: '',
   has_i18n: '',
+  supplier_id: '',
 };
 
 function filtersToApiParams(f: Filters): ProductFilters {
@@ -110,7 +114,8 @@ function filtersToApiParams(f: Filters): ProductFilters {
   if (f.q) params.q = f.q;
   if (f.status) params.status = f.status;
   if (f.brand) params.brand = f.brand;
-  if (f.category_id) params.category_id = f.category_id;
+  if (f.category_ids) params.category_ids = f.category_ids;
+  else if (f.category_id) params.category_id = f.category_id;
   if (f.created_from) params.created_from = f.created_from;
   if (f.created_to) params.created_to = f.created_to;
   if (f.updated_from) params.updated_from = f.updated_from;
@@ -119,6 +124,7 @@ function filtersToApiParams(f: Filters): ProductFilters {
   if (f.has_media === 'false') params.has_media = false;
   if (f.has_i18n === 'true') params.has_i18n = true;
   if (f.has_i18n === 'false') params.has_i18n = false;
+  if (f.supplier_id) params.supplier_id = f.supplier_id;
   return params;
 }
 
@@ -136,6 +142,10 @@ export default function ProductList() {
   const [filters, setFilters] = useState<Filters>({
     ...EMPTY_FILTERS,
     status: searchParams.get('status') || '',
+    brand: searchParams.get('brand') || '',
+    category_id: searchParams.get('category_id') || '',
+    category_ids: searchParams.get('category_ids') || '',
+    supplier_id: searchParams.get('supplier_id') || '',
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);

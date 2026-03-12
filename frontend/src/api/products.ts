@@ -14,6 +14,7 @@ export interface ProductFilters {
   status?: string;
   brand?: string;
   category_id?: string;
+  category_ids?: string;
   q?: string;
   created_from?: string;
   created_to?: string;
@@ -21,6 +22,7 @@ export interface ProductFilters {
   updated_to?: string;
   has_media?: boolean;
   has_i18n?: boolean;
+  supplier_id?: string;
 }
 
 export async function listProducts(

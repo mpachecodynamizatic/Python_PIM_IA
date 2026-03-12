@@ -116,9 +116,12 @@ async def list_products(
     updated_to: str | None = None,
     has_media: bool | None = None,
     has_i18n: bool | None = None,
+    supplier_id: str | None = None,
+    category_ids: str | None = None,
 ) -> PaginatedResponse[ProductListItem]:
     from app.models.product import ProductI18n
     from app.models.media import MediaAsset
+    from app.models.supplier import ProductSupplier
 
     query = select(Product)
 
@@ -126,11 +129,21 @@ async def list_products(
         query = query.where(Product.status == status_filter)
     if brand:
         query = query.where(Product.brand.ilike(f"%{brand}%"))
-    if category_id:
+    if category_ids:
+        ids = [cid.strip() for cid in category_ids.split(",") if cid.strip()]
+        if ids:
+            query = query.where(Product.category_id.in_(ids))
+    elif category_id:
         query = query.where(Product.category_id == category_id)
     if q:
         query = query.where(
             Product.sku.ilike(f"%{q}%") | Product.brand.ilike(f"%{q}%")
+        )
+    if supplier_id:
+        query = query.where(
+            Product.sku.in_(
+                select(ProductSupplier.sku).where(ProductSupplier.supplier_id == supplier_id)
+            )
         )
 
     # Date range filters

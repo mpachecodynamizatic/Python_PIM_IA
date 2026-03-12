@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -30,6 +31,7 @@ import {
   ExpandMore,
   Folder,
   FolderOpen,
+  Visibility,
 } from '@mui/icons-material';
 import {
   createCategory,
@@ -40,16 +42,27 @@ import {
 } from '../../api/categories';
 import type { Category, CategoryTree as CategoryTreeType } from '../../types/category';
 
+/** Collect a node's ID and all descendant IDs recursively. */
+function collectCategoryIds(node: CategoryTreeType): string[] {
+  const ids = [node.id];
+  for (const child of node.children) {
+    ids.push(...collectCategoryIds(child));
+  }
+  return ids;
+}
+
 function TreeNode({
   node,
   level = 0,
   onEdit,
   onDelete,
+  onViewProducts,
 }: {
   node: CategoryTreeType;
   level?: number;
   onEdit: (node: CategoryTreeType) => void;
   onDelete: (node: CategoryTreeType) => void;
+  onViewProducts: (node: CategoryTreeType) => void;
 }) {
   const [open, setOpen] = useState(false);
   const hasChildren = node.children && node.children.length > 0;
@@ -66,11 +79,19 @@ function TreeNode({
           secondary={`slug: ${node.slug} | atributos: ${Object.keys(node.attribute_schema).length}`}
         />
         {hasChildren && (open ? <ExpandLess /> : <ExpandMore />)}
+        <Tooltip title={hasChildren ? "Ver productos de esta categoria y subcategorias" : "Ver productos de esta categoria"}>
+          <IconButton
+            size="small"
+            onClick={(e) => { e.stopPropagation(); onViewProducts(node); }}
+            sx={{ ml: 1 }}
+          >
+            <Visibility fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="Editar categoria">
           <IconButton
             size="small"
             onClick={(e) => { e.stopPropagation(); onEdit(node); }}
-            sx={{ ml: 1 }}
           >
             <Edit fontSize="small" />
           </IconButton>
@@ -89,7 +110,7 @@ function TreeNode({
         <Collapse in={open} timeout="auto" unmountOnExit>
           <List disablePadding>
             {node.children.map((child) => (
-              <TreeNode key={child.id} node={child} level={level + 1} onEdit={onEdit} onDelete={onDelete} />
+              <TreeNode key={child.id} node={child} level={level + 1} onEdit={onEdit} onDelete={onDelete} onViewProducts={onViewProducts} />
             ))}
           </List>
         </Collapse>
@@ -99,10 +120,20 @@ function TreeNode({
 }
 
 export default function CategoryTreePage() {
+  const navigate = useNavigate();
   const [tree, setTree] = useState<CategoryTreeType[]>([]);
   const [flatList, setFlatList] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const handleViewProducts = (node: CategoryTreeType) => {
+    const ids = collectCategoryIds(node);
+    if (ids.length === 1) {
+      navigate(`/products?category_id=${ids[0]}`);
+    } else {
+      navigate(`/products?category_ids=${ids.join(',')}`);
+    }
+  };
 
   // Create dialog
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -216,7 +247,7 @@ export default function CategoryTreePage() {
         ) : (
           <List>
             {tree.map((node) => (
-              <TreeNode key={node.id} node={node} onEdit={openEdit} onDelete={setDeleteTarget} />
+              <TreeNode key={node.id} node={node} onEdit={openEdit} onDelete={setDeleteTarget} onViewProducts={handleViewProducts} />
             ))}
           </List>
         )}

@@ -39,6 +39,8 @@ async def list_products(
     updated_to: str | None = Query(None, description="Fecha maxima de actualizacion (ISO 8601)"),
     has_media: bool | None = Query(None, description="Solo productos con/sin media"),
     has_i18n: bool | None = Query(None, description="Solo productos con/sin traducciones"),
+    supplier_id: str | None = Query(None, description="Filtrar por proveedor (ID)"),
+    category_ids: str | None = Query(None, description="IDs de categorias separados por coma (incluye hijos)"),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
@@ -56,6 +58,8 @@ async def list_products(
         updated_to=updated_to,
         has_media=has_media,
         has_i18n=has_i18n,
+        supplier_id=supplier_id,
+        category_ids=category_ids,
     )
 
 

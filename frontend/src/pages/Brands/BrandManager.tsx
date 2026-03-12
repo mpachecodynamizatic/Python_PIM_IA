@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -22,12 +23,13 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Add, Delete, Edit } from '@mui/icons-material';
+import { Add, Delete, Edit, Visibility } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createBrand, deleteBrand, listBrands, updateBrand } from '../../api/brands';
 import type { Brand, BrandCreate, BrandUpdate } from '../../types/brand';
 
 export default function BrandManager() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [mutError, setMutError] = useState('');
 
@@ -174,6 +176,11 @@ export default function BrandManager() {
                   />
                 </TableCell>
                 <TableCell align="right">
+                  <Tooltip title="Ver productos de esta marca">
+                    <IconButton size="small" onClick={() => navigate(`/products?brand=${encodeURIComponent(brand.name)}`)}>
+                      <Visibility fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                   <Tooltip title="Editar">
                     <IconButton size="small" onClick={() => openEdit(brand)}>
                       <Edit fontSize="small" />

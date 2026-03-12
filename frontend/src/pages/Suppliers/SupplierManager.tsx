@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -22,7 +23,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Add, Delete, Edit } from '@mui/icons-material';
+import { Add, Delete, Edit, Visibility } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../../api/product_extras';
 import type { Supplier } from '../../types/product';
@@ -40,6 +41,7 @@ const EMPTY_FORM: SupplierCreate = {
 };
 
 export default function SupplierManager() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [mutError, setMutError] = useState('');
 
@@ -173,6 +175,11 @@ export default function SupplierManager() {
                   />
                 </TableCell>
                 <TableCell align="right">
+                  <Tooltip title="Ver productos de este proveedor">
+                    <IconButton size="small" onClick={() => navigate(`/products?supplier_id=${supplier.id}`)}>
+                      <Visibility fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                   <Tooltip title="Editar">
                     <IconButton size="small" onClick={() => openEdit(supplier)}>
                       <Edit fontSize="small" />
