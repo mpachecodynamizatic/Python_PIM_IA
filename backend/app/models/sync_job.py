@@ -17,6 +17,12 @@ class SyncJob(UUIDMixin, TimestampMixin, Base):
         nullable=False,
         default="queued",
     )
+
+    # Connection configuration (moved from Channel to SyncJob)
+    # connection_type: "script" | "http_post" | None
+    connection_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    connection_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+
     filters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

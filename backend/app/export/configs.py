@@ -73,6 +73,9 @@ def _build_configs() -> dict[str, ExportConfig]:
     from app.models.brand import Brand
     from app.models.channel import Channel
     from app.models.supplier import Supplier
+    from app.models.product_logistics import ProductLogistics
+    from app.models.product_compliance import ProductCompliance
+    from app.models.product_channel import ProductChannel
 
     _STATUSES = ["draft", "in_review", "approved", "ready", "retired"]
 
@@ -254,10 +257,6 @@ def _build_configs() -> dict[str, ExportConfig]:
                 ExportField("code", "Codigo", "str", required=True),
                 ExportField("description", "Descripcion", "str", required=False),
                 ExportField("active", "Activo", "bool", required=False),
-                ExportField("connection_type", "Tipo Conexion", "enum", required=False,
-                            choices=["ftp", "ssh", "http_post"], default_include=False),
-                ExportField("connection_config", "Config Conexion (JSON)", "json", required=False,
-                            readonly=True, default_include=False),
                 ExportField("created_at", "Creado", "datetime", readonly=True, default_include=False),
                 ExportField("updated_at", "Actualizado", "datetime", readonly=True, default_include=False),
             ],
@@ -278,6 +277,90 @@ def _build_configs() -> dict[str, ExportConfig]:
                 ExportField("contact_phone", "Telefono Contacto", "str", required=False),
                 ExportField("notes", "Notas", "str", required=False, default_include=False),
                 ExportField("active", "Activo", "bool", required=False),
+                ExportField("created_at", "Creado", "datetime", readonly=True, default_include=False),
+                ExportField("updated_at", "Actualizado", "datetime", readonly=True, default_include=False),
+            ],
+        ),
+
+        "product_logistics": ExportConfig(
+            resource="product_logistics",
+            label="Logística de Productos",
+            model=ProductLogistics,
+            auto_pk=True,
+            upsert_key=["sku"],
+            fields=[
+                ExportField("id", "ID", "str", readonly=True, default_include=False),
+                ExportField("sku", "SKU", "str", required=True, fk=FKConstraint("products", "sku")),
+                # Unidades de medida
+                ExportField("base_unit", "Unidad Base", "str", required=False),
+                ExportField("box_units", "Unidades por Caja", "int", required=False),
+                ExportField("pallet_boxes", "Cajas por Palet", "int", required=False),
+                ExportField("pallet_units", "Unidades por Palet", "int", required=False),
+                # Dimensiones (mm)
+                ExportField("height_mm", "Alto (mm)", "float", required=False),
+                ExportField("width_mm", "Ancho (mm)", "float", required=False),
+                ExportField("depth_mm", "Fondo (mm)", "float", required=False),
+                # Peso (gramos)
+                ExportField("weight_gross_g", "Peso Bruto (g)", "float", required=False),
+                ExportField("weight_net_g", "Peso Neto (g)", "float", required=False),
+                # Embalaje / logística
+                ExportField("stackable", "Apilable", "bool", required=False),
+                ExportField("packaging_type", "Tipo Embalaje", "str", required=False),
+                ExportField("transport_conditions", "Condiciones Transporte", "str", required=False, default_include=False),
+                # Mercancía peligrosa ADR
+                ExportField("adr", "ADR (Mercancía Peligrosa)", "bool", required=False),
+                ExportField("adr_class", "Clase ADR", "str", required=False, default_include=False),
+                ExportField("adr_un_number", "Número UN", "str", required=False, default_include=False),
+                ExportField("adr_details", "Detalles ADR", "str", required=False, default_include=False),
+                ExportField("created_at", "Creado", "datetime", readonly=True, default_include=False),
+                ExportField("updated_at", "Actualizado", "datetime", readonly=True, default_include=False),
+            ],
+        ),
+
+        "product_compliance": ExportConfig(
+            resource="product_compliance",
+            label="Conformidad de Productos",
+            model=ProductCompliance,
+            auto_pk=True,
+            upsert_key=["sku"],
+            fields=[
+                ExportField("id", "ID", "str", readonly=True, default_include=False),
+                ExportField("sku", "SKU", "str", required=True, fk=FKConstraint("products", "sku")),
+                # Certificaciones
+                ExportField("certifications", "Certificaciones (JSON)", "json", required=False),
+                # Fichas técnicas / seguridad
+                ExportField("technical_sheet_url", "URL Ficha Técnica", "str", required=False),
+                ExportField("safety_sheet_url", "URL Ficha Seguridad", "str", required=False),
+                # Avisos legales / restricciones
+                ExportField("legal_warnings", "Avisos Legales", "str", required=False, default_include=False),
+                ExportField("min_age", "Edad Mínima", "int", required=False),
+                # Trazabilidad
+                ExportField("has_lot_traceability", "Trazabilidad por Lote", "bool", required=False),
+                ExportField("has_expiry_date", "Fecha Caducidad", "bool", required=False),
+                # Datos adicionales
+                ExportField("country_of_origin", "País Origen (ISO)", "str", required=False, max_length=3),
+                ExportField("hs_code", "Código Arancelario", "str", required=False),
+                ExportField("created_at", "Creado", "datetime", readonly=True, default_include=False),
+                ExportField("updated_at", "Actualizado", "datetime", readonly=True, default_include=False),
+            ],
+        ),
+
+        "product_channels": ExportConfig(
+            resource="product_channels",
+            label="Productos por Canal",
+            model=ProductChannel,
+            auto_pk=True,
+            upsert_key=["sku", "channel_id"],
+            fields=[
+                ExportField("id", "ID", "str", readonly=True, default_include=False),
+                ExportField("sku", "SKU", "str", required=True, fk=FKConstraint("products", "sku")),
+                ExportField("channel_id", "ID Canal", "str", required=True, fk=FKConstraint("channels", "id")),
+                # Datos específicos del canal
+                ExportField("name", "Nombre en Canal", "str", required=False),
+                ExportField("description", "Descripción en Canal", "str", required=False, default_include=False),
+                ExportField("active", "Activo", "bool", required=False),
+                ExportField("country_restrictions", "Restricciones País (JSON)", "json", required=False, default_include=False),
+                ExportField("marketplace_fields", "Campos Marketplace (JSON)", "json", required=False, default_include=False),
                 ExportField("created_at", "Creado", "datetime", readonly=True, default_include=False),
                 ExportField("updated_at", "Actualizado", "datetime", readonly=True, default_include=False),
             ],

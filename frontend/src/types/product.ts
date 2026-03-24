@@ -141,8 +141,6 @@ export interface Channel {
   code: string;
   description: string | null;
   active: boolean;
-  connection_type: string | null;
-  connection_config: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }

@@ -107,22 +107,17 @@ export default function SyncDashboard() {
 
   // ── Create dialog state ──────────────────────────────────────────────────
   const [newChannelId, setNewChannelId] = useState('');
-  const [newFilterStatus, setNewFilterStatus] = useState('');
-  const [newFilterBrand, setNewFilterBrand] = useState('');
   const [newMaxRetries, setNewMaxRetries] = useState(3);
   const [newCron, setNewCron] = useState('');
 
-  // Connection override
-  const [overrideConn, setOverrideConn] = useState(false);
-  const [newConnType, setNewConnType] = useState('');
-  // FTP / SSH fields
-  const [connHost, setConnHost] = useState('');
-  const [connPort, setConnPort] = useState(21);
-  const [connUser, setConnUser] = useState('');
-  const [connPass, setConnPass] = useState('');
-  const [connPath, setConnPath] = useState('/');
-  const [connPassive, setConnPassive] = useState(true);
-  const [connPrivateKey, setConnPrivateKey] = useState('');
+  // Connection (always required)
+  const [newConnType, setNewConnType] = useState<'script' | 'http_post'>('script');
+
+  // Script fields
+  const [scriptPath, setScriptPath] = useState('');
+  const [scriptArgs, setScriptArgs] = useState('');
+  const [scriptTimeout, setScriptTimeout] = useState(300);
+
   // HTTP POST fields
   const [connUrl, setConnUrl] = useState('');
   const [connAuthType, setConnAuthType] = useState<'none' | 'basic' | 'bearer'>('none');
@@ -158,14 +153,17 @@ export default function SyncDashboard() {
       queryClient.invalidateQueries({ queryKey: ['sync-jobs'] });
       setDialogOpen(false);
       setNewChannelId('');
-      setOverrideConn(false);
-      setNewConnType('');
-      setConnHost(''); setConnPort(21); setConnUser(''); setConnPass('');
-      setConnPath('/'); setConnPassive(true); setConnPrivateKey('');
-      setConnUrl(''); setConnAuthType('none'); setConnToken('');
-      setConnHttpUser(''); setConnHttpPass('');
-      setNewFilterStatus('');
-      setNewFilterBrand('');
+      setNewConnType('script');
+      // Reset script fields
+      setScriptPath('');
+      setScriptArgs('');
+      setScriptTimeout(300);
+      // Reset HTTP fields
+      setConnUrl('');
+      setConnAuthType('none');
+      setConnToken('');
+      setConnHttpUser('');
+      setConnHttpPass('');
       setNewMaxRetries(3);
       setNewCron('');
     },
@@ -186,41 +184,33 @@ export default function SyncDashboard() {
   });
 
   const handleCreate = () => {
-    if (!newChannelId) return;
-    const filters: Record<string, string> = {};
-    if (newFilterStatus) filters.status = newFilterStatus;
-    if (newFilterBrand) filters.brand = newFilterBrand;
+    if (!newChannelId || !newConnType) return;
 
-    let connection_type: string | null | undefined;
-    let connection_config: Record<string, unknown> | undefined;
+    let connection_config: Record<string, unknown> = {};
 
-    if (overrideConn && newConnType) {
-      connection_type = newConnType;
-      if (newConnType === 'ftp') {
-        connection_config = {
-          host: connHost, port: connPort, username: connUser, password: connPass,
-          remote_path: connPath, passive: connPassive,
-        };
-      } else if (newConnType === 'ssh') {
-        connection_config = {
-          host: connHost, port: connPort, username: connUser, password: connPass,
-          remote_path: connPath, private_key: connPrivateKey || null,
-        };
-      } else if (newConnType === 'http_post') {
-        connection_config = {
-          url: connUrl, auth_type: connAuthType,
-          ...(connAuthType === 'bearer' ? { token: connToken } : {}),
-          ...(connAuthType === 'basic' ? { username: connHttpUser, password: connHttpPass } : {}),
-        };
-      }
+    if (newConnType === 'script') {
+      connection_config = {
+        script_path: scriptPath,
+        args: scriptArgs || '',
+        timeout: scriptTimeout,
+      };
+    } else if (newConnType === 'http_post') {
+      connection_config = {
+        url: connUrl,
+        auth_type: connAuthType,
+        timeout: 30,
+        ...(connAuthType === 'bearer' ? { token: connToken } : {}),
+        ...(connAuthType === 'basic' ? { username: connHttpUser, password: connHttpPass } : {}),
+      };
     }
 
     createMutation.mutate({
       channel_id: newChannelId,
-      filters,
+      connection_type: newConnType,
+      connection_config,
+      filters: {},
       max_retries: newMaxRetries,
       cron_expression: newCron || null,
-      ...(overrideConn && newConnType ? { connection_type, connection_config } : {}),
     });
   };
 
@@ -517,11 +507,7 @@ export default function SyncDashboard() {
               <Select
                 value={newChannelId}
                 label="Canal"
-                onChange={(e) => {
-                  setNewChannelId(e.target.value);
-                  setOverrideConn(false);
-                  setNewConnType('');
-                }}
+                onChange={(e) => setNewChannelId(e.target.value)}
               >
                 {(channels ?? []).map((ch) => (
                   <MenuItem key={ch.id} value={ch.id}>{ch.name}</MenuItem>
@@ -529,122 +515,59 @@ export default function SyncDashboard() {
               </Select>
             </FormControl>
 
-            {/* Show inherited connection info when a channel is selected */}
-            {newChannelId && (() => {
-              const sel = (channels ?? []).find((c) => c.id === newChannelId);
-              return sel ? (
-                <Box sx={{ bgcolor: 'grey.50', border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Conexión heredada del canal:
-                  </Typography>
-                  <Box display="flex" alignItems="center" gap={1} mt={0.5}>
-                    <Chip
-                      size="small"
-                      label={sel.connection_type ?? 'sin configurar'}
-                      color={sel.connection_type ? 'primary' : 'default'}
-                      variant="outlined"
-                    />
-                  </Box>
-                </Box>
-              ) : null;
-            })()}
+            <Divider sx={{ my: 2 }} />
 
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={overrideConn}
-                  size="small"
-                  onChange={(e) => {
-                    setOverrideConn(e.target.checked);
-                    if (!e.target.checked) setNewConnType('');
-                  }}
-                />
-              }
-              label="Personalizar conexión para este job"
-            />
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
+              Configuración de conexión
+            </Typography>
 
-            {overrideConn && (
-              <>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Tipo de conexión</InputLabel>
-                  <Select
-                    value={newConnType}
-                    label="Tipo de conexión"
-                    onChange={(e) => setNewConnType(e.target.value)}
-                  >
-                    <MenuItem value="">-- Heredar del canal --</MenuItem>
-                    <MenuItem value="ftp">FTP</MenuItem>
-                    <MenuItem value="ssh">SSH / SFTP</MenuItem>
-                    <MenuItem value="http_post">HTTP POST</MenuItem>
-                  </Select>
-                </FormControl>
+            <Box display="flex" flexDirection="column" gap={2}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Tipo de conexión</InputLabel>
+                <Select
+                  value={newConnType}
+                  label="Tipo de conexión"
+                  onChange={(e) => setNewConnType(e.target.value as 'script' | 'http_post')}
+                >
+                  <MenuItem value="script">Script Personalizado</MenuItem>
+                  <MenuItem value="http_post">HTTP POST</MenuItem>
+                </Select>
+              </FormControl>
 
-                {(newConnType === 'ftp' || newConnType === 'ssh') && (
-                  <>
-                    <Box display="flex" gap={1}>
-                      <TextField
-                        label="Host"
-                        size="small"
-                        value={connHost}
-                        onChange={(e) => setConnHost(e.target.value)}
-                        sx={{ flex: 3 }}
-                      />
-                      <TextField
-                        label="Puerto"
-                        size="small"
-                        type="number"
-                        value={connPort}
-                        onChange={(e) => setConnPort(Number(e.target.value))}
-                        sx={{ flex: 1 }}
-                      />
-                    </Box>
-                    <Box display="flex" gap={1}>
-                      <TextField
-                        label="Usuario"
-                        size="small"
-                        value={connUser}
-                        onChange={(e) => setConnUser(e.target.value)}
-                        sx={{ flex: 1 }}
-                      />
-                      <TextField
-                        label="Contraseña"
-                        size="small"
-                        type="password"
-                        value={connPass}
-                        onChange={(e) => setConnPass(e.target.value)}
-                        sx={{ flex: 1 }}
-                      />
-                    </Box>
-                    <TextField
-                      label="Ruta remota"
-                      size="small"
-                      value={connPath}
-                      onChange={(e) => setConnPath(e.target.value)}
-                      placeholder="/ruta/remota/"
-                      fullWidth
-                    />
-                    {newConnType === 'ftp' && (
-                      <FormControlLabel
-                        control={<Switch size="small" checked={connPassive} onChange={(e) => setConnPassive(e.target.checked)} />}
-                        label="Modo pasivo"
-                      />
-                    )}
-                    {newConnType === 'ssh' && (
-                      <TextField
-                        label="Clave privada SSH (opcional)"
-                        size="small"
-                        multiline
-                        rows={2}
-                        value={connPrivateKey}
-                        onChange={(e) => setConnPrivateKey(e.target.value)}
-                        placeholder="-----BEGIN RSA PRIVATE KEY-----"
-                        fullWidth
-                      />
-                    )}
-                  </>
-                )}
+              {newConnType === 'script' && (
+                <>
+                  <TextField
+                    label="Ruta del script"
+                    size="small"
+                    value={scriptPath}
+                    onChange={(e) => setScriptPath(e.target.value)}
+                    placeholder="/ruta/al/script.py o C:\scripts\sync.bat"
+                    helperText="Ruta absoluta al script que se ejecutará"
+                    fullWidth
+                    required
+                  />
+                  <TextField
+                    label="Argumentos adicionales (opcional)"
+                    size="small"
+                    value={scriptArgs}
+                    onChange={(e) => setScriptArgs(e.target.value)}
+                    placeholder="--mode sync --verbose"
+                    helperText="Argumentos que se pasarán al script"
+                    fullWidth
+                  />
+                  <TextField
+                    label="Timeout (segundos)"
+                    size="small"
+                    type="number"
+                    value={scriptTimeout}
+                    onChange={(e) => setScriptTimeout(Number(e.target.value))}
+                    helperText="Tiempo máximo de ejecución (por defecto 300s)"
+                    sx={{ width: 200 }}
+                  />
+                </>
+              )}
 
-                {newConnType === 'http_post' && (
+              {newConnType === 'http_post' && (
                   <>
                     <TextField
                       label="URL del endpoint"
@@ -696,58 +619,33 @@ export default function SyncDashboard() {
                     )}
                   </>
                 )}
-              </>
-            )}
+            </Box>
 
-            <Divider />
+            <Divider sx={{ my: 2 }} />
 
-            <Typography variant="subtitle2" color="text.secondary">
-              Filtros de productos (opcional)
-            </Typography>
-
-            <FormControl fullWidth size="small">
-              <InputLabel>Estado del producto</InputLabel>
-              <Select
-                value={newFilterStatus}
-                label="Estado del producto"
-                onChange={(e) => setNewFilterStatus(e.target.value)}
-              >
-                <MenuItem value="">Todos</MenuItem>
-                <MenuItem value="draft">draft</MenuItem>
-                <MenuItem value="ready">ready</MenuItem>
-                <MenuItem value="retired">retired</MenuItem>
-              </Select>
-            </FormControl>
-
-            <TextField
-              label="Marca"
-              size="small"
-              value={newFilterBrand}
-              onChange={(e) => setNewFilterBrand(e.target.value)}
-              placeholder="Filtrar por marca (opcional)"
-            />
-
-            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
               Reintentos y programacion
             </Typography>
 
-            <TextField
-              label="Max reintentos"
-              size="small"
-              type="number"
-              value={newMaxRetries}
-              onChange={(e) => setNewMaxRetries(Number(e.target.value))}
-              inputProps={{ min: 0, max: 10 }}
-            />
+            <Box display="flex" flexDirection="column" gap={2}>
+              <TextField
+                label="Max reintentos"
+                size="small"
+                type="number"
+                value={newMaxRetries}
+                onChange={(e) => setNewMaxRetries(Number(e.target.value))}
+                inputProps={{ min: 0, max: 10 }}
+              />
 
-            <TextField
-              label="Expresion cron (opcional)"
-              size="small"
-              value={newCron}
-              onChange={(e) => setNewCron(e.target.value)}
-              placeholder="0 */6 * * * (cada 6 horas)"
-              helperText="Dejar vacio para ejecucion unica"
-            />
+              <TextField
+                label="Expresion cron (opcional)"
+                size="small"
+                value={newCron}
+                onChange={(e) => setNewCron(e.target.value)}
+                placeholder="0 */6 * * * (cada 6 horas)"
+                helperText="Dejar vacio para ejecucion unica"
+              />
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions>
@@ -755,7 +653,12 @@ export default function SyncDashboard() {
           <Button
             variant="contained"
             onClick={handleCreate}
-            disabled={!newChannelId || createMutation.isPending}
+            disabled={
+              !newChannelId ||
+              (newConnType === 'script' && !scriptPath.trim()) ||
+              (newConnType === 'http_post' && !connUrl.trim()) ||
+              createMutation.isPending
+            }
           >
             Lanzar
           </Button>

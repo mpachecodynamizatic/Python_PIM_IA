@@ -6,6 +6,7 @@ import {
   AccordionSummary,
   Box,
   Button,
+  ButtonGroup,
   Chip,
   CircularProgress,
   Collapse,
@@ -18,6 +19,7 @@ import {
   FormControlLabel,
   IconButton,
   InputLabel,
+  Menu,
   MenuItem,
   Paper,
   Select,
@@ -45,6 +47,7 @@ import {
   Public,
   Save,
   Star,
+  ArrowDropDown,
 } from '@mui/icons-material';
 import { listProducts, createProduct, deleteProduct } from '../../api/products';
 import type { ProductFilters } from '../../api/products';
@@ -164,9 +167,40 @@ export default function ProductList() {
   // Export / Import dialogs
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [exportResource, setExportResource] = useState<'products' | 'product_logistics' | 'product_compliance' | 'product_channels'>('products');
+  const [importResource, setImportResource] = useState<'products' | 'product_logistics' | 'product_compliance' | 'product_channels'>('products');
+  const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
+  const [importMenuAnchor, setImportMenuAnchor] = useState<null | HTMLElement>(null);
 
   // Delete confirmation
   const [deleteConfirmSku, setDeleteConfirmSku] = useState<string | null>(null);
+
+  const resourceLabels: Record<string, string> = {
+    products: 'Productos (datos básicos)',
+    product_logistics: 'Logística',
+    product_compliance: 'Conformidad',
+    product_channels: 'Asignación Canales',
+  };
+
+  const handleExportMenuClick = (event: React.MouseEvent<HTMLElement>) => {
+    setExportMenuAnchor(event.currentTarget);
+  };
+
+  const handleImportMenuClick = (event: React.MouseEvent<HTMLElement>) => {
+    setImportMenuAnchor(event.currentTarget);
+  };
+
+  const handleExportResourceSelect = (resource: 'products' | 'product_logistics' | 'product_compliance' | 'product_channels') => {
+    setExportResource(resource);
+    setExportMenuAnchor(null);
+    setExportOpen(true);
+  };
+
+  const handleImportResourceSelect = (resource: 'products' | 'product_logistics' | 'product_compliance' | 'product_channels') => {
+    setImportResource(resource);
+    setImportMenuAnchor(null);
+    setImportOpen(true);
+  };
 
   const updateFilter = (key: keyof Filters, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -297,26 +331,41 @@ export default function ProductList() {
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Typography variant="h4">Productos</Typography>
         <Box display="flex" gap={1}>
-          <Tooltip title="Importar productos desde Excel">
+          <ButtonGroup variant="outlined" size="small">
             <Button
-              variant="outlined"
-              size="small"
               startIcon={<FileUpload />}
-              onClick={() => setImportOpen(true)}
+              onClick={() => {
+                setImportResource('products');
+                setImportOpen(true);
+              }}
             >
               Importar
             </Button>
-          </Tooltip>
-          <Tooltip title="Exportar productos a Excel">
             <Button
-              variant="outlined"
               size="small"
+              onClick={handleImportMenuClick}
+            >
+              <ArrowDropDown />
+            </Button>
+          </ButtonGroup>
+
+          <ButtonGroup variant="outlined" size="small">
+            <Button
               startIcon={<FileDownload />}
-              onClick={() => setExportOpen(true)}
+              onClick={() => {
+                setExportResource('products');
+                setExportOpen(true);
+              }}
             >
               Exportar
             </Button>
-          </Tooltip>
+            <Button
+              size="small"
+              onClick={handleExportMenuClick}
+            >
+              <ArrowDropDown />
+            </Button>
+          </ButtonGroup>
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
             Nuevo Producto
           </Button>
@@ -666,22 +715,62 @@ export default function ProductList() {
         </DialogActions>
       </Dialog>
 
+      {/* Menu: seleccionar recurso para exportar */}
+      <Menu
+        anchorEl={exportMenuAnchor}
+        open={Boolean(exportMenuAnchor)}
+        onClose={() => setExportMenuAnchor(null)}
+      >
+        <MenuItem onClick={() => handleExportResourceSelect('products')}>
+          Productos (datos básicos)
+        </MenuItem>
+        <MenuItem onClick={() => handleExportResourceSelect('product_logistics')}>
+          Logística
+        </MenuItem>
+        <MenuItem onClick={() => handleExportResourceSelect('product_compliance')}>
+          Conformidad
+        </MenuItem>
+        <MenuItem onClick={() => handleExportResourceSelect('product_channels')}>
+          Asignación Canales
+        </MenuItem>
+      </Menu>
+
+      {/* Menu: seleccionar recurso para importar */}
+      <Menu
+        anchorEl={importMenuAnchor}
+        open={Boolean(importMenuAnchor)}
+        onClose={() => setImportMenuAnchor(null)}
+      >
+        <MenuItem onClick={() => handleImportResourceSelect('products')}>
+          Productos (datos básicos)
+        </MenuItem>
+        <MenuItem onClick={() => handleImportResourceSelect('product_logistics')}>
+          Logística
+        </MenuItem>
+        <MenuItem onClick={() => handleImportResourceSelect('product_compliance')}>
+          Conformidad
+        </MenuItem>
+        <MenuItem onClick={() => handleImportResourceSelect('product_channels')}>
+          Asignación Canales
+        </MenuItem>
+      </Menu>
+
       {/* Dialog: exportar productos */}
       <ExportDialog
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        resource="products"
-        resourceLabel="Productos"
-        filters={filtersToApiParams(filters) as Record<string, unknown>}
-        totalRecords={total}
+        resource={exportResource}
+        resourceLabel={resourceLabels[exportResource]}
+        filters={exportResource === 'products' ? filtersToApiParams(filters) as Record<string, unknown> : {}}
+        totalRecords={exportResource === 'products' ? total : undefined}
       />
 
       {/* Dialog: importar productos */}
       <ImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        resource="products"
-        resourceLabel="Productos"
+        resource={importResource}
+        resourceLabel={resourceLabels[importResource]}
         onSuccess={fetchProducts}
       />
     </Box>
