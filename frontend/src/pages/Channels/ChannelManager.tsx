@@ -26,10 +26,12 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Add, Delete, Edit } from '@mui/icons-material';
+import { Add, Delete, Edit, FileUpload, FileDownload } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listChannelCatalog, createChannelCatalog, updateChannelCatalog, deleteChannelCatalog } from '../../api/product_extras';
 import type { Channel } from '../../types/product';
+import ImportDialog from '../../components/ImportDialog';
+import ExportDialog from '../../components/ExportDialog';
 
 type ChannelCreate = Omit<Channel, 'id' | 'created_at' | 'updated_at'>;
 
@@ -214,6 +216,10 @@ export default function ChannelManager() {
 
   const [deleteTarget, setDeleteTarget] = useState<Channel | null>(null);
 
+  // Import/Export dialogs
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+
   const { data: channels = [], isLoading } = useQuery({
     queryKey: ['channels-catalog'],
     queryFn: () => listChannelCatalog(),
@@ -263,13 +269,29 @@ export default function ChannelManager() {
             Gestiona el catalogo de canales de venta para vincularlos a productos
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => { setMutError(''); setNewForm({ ...EMPTY_FORM }); setCreateOpen(true); }}
-        >
-          Nuevo Canal
-        </Button>
+        <Box display="flex" gap={1}>
+          <Button
+            variant="outlined"
+            startIcon={<FileUpload />}
+            onClick={() => setImportOpen(true)}
+          >
+            Importar
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownload />}
+            onClick={() => setExportOpen(true)}
+          >
+            Exportar
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={() => { setMutError(''); setNewForm({ ...EMPTY_FORM }); setCreateOpen(true); }}
+          >
+            Nuevo Canal
+          </Button>
+        </Box>
       </Box>
 
       {mutError && (
@@ -519,6 +541,24 @@ export default function ChannelManager() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Dialog: importar */}
+      <ImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        resource="channels"
+        resourceLabel="Canales"
+        onSuccess={invalidate}
+      />
+
+      {/* Dialog: exportar */}
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        resource="channels"
+        resourceLabel="Canales"
+        totalRecords={channels.length}
+      />
     </Box>
   );
 }

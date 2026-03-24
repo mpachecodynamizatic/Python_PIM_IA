@@ -32,6 +32,8 @@ import {
   Folder,
   FolderOpen,
   Visibility,
+  FileUpload,
+  FileDownload,
 } from '@mui/icons-material';
 import {
   createCategory,
@@ -41,6 +43,8 @@ import {
   updateCategory,
 } from '../../api/categories';
 import type { Category, CategoryTree as CategoryTreeType } from '../../types/category';
+import ImportDialog from '../../components/ImportDialog';
+import ExportDialog from '../../components/ExportDialog';
 
 /** Collect a node's ID and all descendant IDs recursively. */
 function collectCategoryIds(node: CategoryTreeType): string[] {
@@ -149,6 +153,10 @@ export default function CategoryTreePage() {
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<CategoryTreeType | null>(null);
 
+  // Import/Export dialogs
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+
   const fetchTree = useCallback(async () => {
     try {
       const [treeData, flat] = await Promise.all([getCategoryTree(), listCategories()]);
@@ -224,9 +232,25 @@ export default function CategoryTreePage() {
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Typography variant="h4">Taxonomia</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setError(''); setDialogOpen(true); }}>
-          Nueva Categoria
-        </Button>
+        <Box display="flex" gap={1}>
+          <Button
+            variant="outlined"
+            startIcon={<FileUpload />}
+            onClick={() => setImportOpen(true)}
+          >
+            Importar
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownload />}
+            onClick={() => setExportOpen(true)}
+          >
+            Exportar
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setError(''); setDialogOpen(true); }}>
+            Nueva Categoria
+          </Button>
+        </Box>
       </Box>
 
       {error && (
@@ -387,6 +411,24 @@ export default function CategoryTreePage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Dialog: importar */}
+      <ImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        resource="categories"
+        resourceLabel="Categorías"
+        onSuccess={fetchTree}
+      />
+
+      {/* Dialog: exportar */}
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        resource="categories"
+        resourceLabel="Categorías"
+        totalRecords={flatList.length}
+      />
     </Box>
   );
 }

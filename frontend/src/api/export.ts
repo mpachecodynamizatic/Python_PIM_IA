@@ -12,8 +12,14 @@ export async function listExportResources(): Promise<ResourceMeta[]> {
   return r.data;
 }
 
-export async function getExportFields(resource: string): Promise<ExportFieldMeta[]> {
-  const r = await client.get<ExportFieldMeta[]>(`/export/${resource}/fields`);
+export async function getExportFields(resource: string): Promise<{
+  fields: ExportFieldMeta[];
+  user_selection: string[] | null;
+}> {
+  const r = await client.get<{
+    fields: ExportFieldMeta[];
+    user_selection: string[] | null;
+  }>(`/export/${resource}/fields`);
   return r.data;
 }
 

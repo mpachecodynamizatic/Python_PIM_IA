@@ -47,9 +47,14 @@ export default function ExportDialog({
     if (!open) return;
     setLoadingFields(true);
     getExportFields(resource)
-      .then((fetched) => {
-        setFields(fetched);
-        setSelected(new Set(fetched.filter((f) => f.default_include).map((f) => f.key)));
+      .then((response) => {
+        setFields(response.fields);
+        // Use user's saved selection if available, otherwise use defaults
+        if (response.user_selection && response.user_selection.length > 0) {
+          setSelected(new Set(response.user_selection));
+        } else {
+          setSelected(new Set(response.fields.filter((f) => f.default_include).map((f) => f.key)));
+        }
       })
       .catch(() => {})
       .finally(() => setLoadingFields(false));

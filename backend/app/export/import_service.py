@@ -189,8 +189,8 @@ async def validate_import(
                     row_errors.append(ImportIssue(
                         row=excel_row_idx,
                         field_key=ef.key,
-                        code="error_type",
-                        message=f"[{ef.label}] Campo obligatorio",
+                        code="error_missing_column",
+                        message=f"[{ef.label}] Columna obligatoria no encontrada en el Excel. Asegurese de que la cabecera contenga '{ef.label}'",
                     ))
                 continue  # Skip: model/DB default will be used
 
@@ -200,7 +200,7 @@ async def validate_import(
                 row_errors.append(ImportIssue(
                     row=excel_row_idx,
                     field_key=ef.key,
-                    code="error_type",
+                    code="error_invalid_value",
                     message=f"[{ef.label}] {err_msg}",
                 ))
                 continue
@@ -211,11 +211,22 @@ async def validate_import(
             if ef.fk and value is not None:
                 fk_key = (ef.fk.table, ef.fk.column)
                 if fk_key in fk_exists and value not in fk_exists[fk_key]:
+                    # Get readable table name
+                    table_labels = {
+                        "products": "Productos",
+                        "categories": "Categorías",
+                        "brands": "Marcas",
+                        "channels": "Canales",
+                        "suppliers": "Proveedores",
+                        "attribute_families": "Familias de Atributos",
+                        "quality_rule_sets": "Conjuntos de Reglas de Calidad",
+                    }
+                    table_label = table_labels.get(ef.fk.table, ef.fk.table)
                     row_errors.append(ImportIssue(
                         row=excel_row_idx,
                         field_key=ef.key,
                         code="error_fk_not_found",
-                        message=f"[{ef.label}] El valor '{value}' no existe en {ef.fk.table}",
+                        message=f"[{ef.label}] El valor '{value}' no existe en {table_label}. Verifique que el registro exista antes de importar",
                     ))
 
         # Upsert mode
@@ -223,11 +234,14 @@ async def validate_import(
         mode = "update" if existing is not None else "create"
 
         if mode == "update":
+            # Build identifier for the warning message
+            upsert_values = {uk: coerced.get(uk, "?") for uk in config.upsert_key}
+            identifier = ", ".join(f"{k}={v}" for k, v in upsert_values.items())
             row_warnings.append(ImportIssue(
                 row=excel_row_idx,
                 field_key=config.upsert_key[0] if config.upsert_key else "id",
                 code="warn_will_overwrite",
-                message=f"Fila {excel_row_idx}: se sobreescribira un registro existente",
+                message=f"Se actualizará el registro existente con {identifier}",
             ))
 
         # Business-rule check: status transitions for products
@@ -248,8 +262,8 @@ async def validate_import(
                         field_key="status",
                         code="error_invalid_transition",
                         message=(
-                            f"Transicion no permitida: '{existing.status}' → '{new_status}'. "
-                            f"Permitidas: {', '.join(allowed) or 'ninguna'}"
+                            f"[Estado] Transición inválida de '{existing.status}' a '{new_status}'. "
+                            f"Transiciones permitidas desde '{existing.status}': {', '.join(allowed) if allowed else 'ninguna'}"
                         ),
                     ))
 

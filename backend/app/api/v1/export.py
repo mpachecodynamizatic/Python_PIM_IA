@@ -96,11 +96,28 @@ async def list_resources(
 @router.get("/{resource}/fields")
 async def get_fields(
     resource: str = Path(...),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Return field metadata for the field selector dialog."""
+    """Return field metadata for the field selector dialog, including user preferences."""
     from app.export.export_service import list_fields
-    return list_fields(resource)
+    from sqlalchemy import select
+    from app.models.export_preference import ExportPreference
+
+    fields = list_fields(resource)
+
+    # Get user preferences for this resource
+    stmt = select(ExportPreference).where(
+        ExportPreference.user_id == str(current_user.id),
+        ExportPreference.resource == resource
+    )
+    result = await db.execute(stmt)
+    pref = result.scalar_one_or_none()
+
+    return {
+        "fields": fields,
+        "user_selection": pref.selected_fields if pref else None
+    }
 
 
 @router.post("/{resource}")
@@ -108,10 +125,33 @@ async def export_resource(
     resource: str = Path(...),
     body: ExportRequest = ExportRequest(),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Export rows to Excel and download."""
     from app.export.export_service import export_to_excel
+    from sqlalchemy import select
+    from app.models.export_preference import ExportPreference
+
+    # Save user preferences if fields were selected
+    if body.fields is not None:
+        stmt = select(ExportPreference).where(
+            ExportPreference.user_id == str(current_user.id),
+            ExportPreference.resource == resource
+        )
+        result = await db.execute(stmt)
+        pref = result.scalar_one_or_none()
+
+        if pref:
+            pref.selected_fields = body.fields
+        else:
+            pref = ExportPreference(
+                user_id=str(current_user.id),
+                resource=resource,
+                selected_fields=body.fields
+            )
+            db.add(pref)
+
+        await db.commit()
 
     buffer = await export_to_excel(
         resource=resource,

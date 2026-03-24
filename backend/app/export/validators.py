@@ -20,7 +20,7 @@ def coerce_value(raw: Any, field: ExportField) -> tuple[Any, str | None]:
     # Normalise empty / None
     if raw is None or (isinstance(raw, str) and raw.strip() == ""):
         if field.required:
-            return None, "Campo obligatorio"
+            return None, "Campo obligatorio (valor vacío o nulo)"
         return None, None
 
     if isinstance(raw, str):
@@ -30,20 +30,20 @@ def coerce_value(raw: Any, field: ExportField) -> tuple[Any, str | None]:
         case "str":
             value = str(raw)
             if field.max_length and len(value) > field.max_length:
-                return None, f"Longitud maxima {field.max_length} caracteres"
+                return None, f"Longitud maxima {field.max_length} caracteres (actual: {len(value)})"
             return value, None
 
         case "int":
             try:
                 return int(float(str(raw))), None
             except (ValueError, TypeError):
-                return None, "Debe ser un numero entero"
+                return None, f"Debe ser un numero entero (valor actual: '{raw}')"
 
         case "float":
             try:
                 return float(str(raw)), None
             except (ValueError, TypeError):
-                return None, "Debe ser un numero decimal"
+                return None, f"Debe ser un numero decimal (valor actual: '{raw}')"
 
         case "bool":
             raw_lower = str(raw).lower().strip()
@@ -51,7 +51,7 @@ def coerce_value(raw: Any, field: ExportField) -> tuple[Any, str | None]:
                 return True, None
             if raw_lower in ("0", "false", "no"):
                 return False, None
-            return None, "Debe ser verdadero/falso (1/0, true/false, si/no)"
+            return None, f"Debe ser verdadero/falso (valor actual: '{raw}', use: 1/0, true/false, si/no)"
 
         case "date":
             if isinstance(raw, (date, datetime)):
@@ -67,7 +67,7 @@ def coerce_value(raw: Any, field: ExportField) -> tuple[Any, str | None]:
                     return datetime.strptime(s, "%d/%m/%Y").date(), None
                 except ValueError:
                     pass
-            return None, "Formato de fecha no valido (use YYYY-MM-DD o DD/MM/YYYY)"
+            return None, f"Formato de fecha no valido (valor: '{raw}', use: YYYY-MM-DD o DD/MM/YYYY)"
 
         case "datetime":
             if isinstance(raw, datetime):
@@ -85,12 +85,12 @@ def coerce_value(raw: Any, field: ExportField) -> tuple[Any, str | None]:
                 return datetime.fromisoformat(s), None
             except ValueError:
                 pass
-            return None, "Formato de datetime no valido (use ISO 8601 o YYYY-MM-DD HH:MM)"
+            return None, f"Formato de datetime no valido (valor: '{raw}', use: ISO 8601 o YYYY-MM-DD HH:MM)"
 
         case "enum":
             val = str(raw)
             if field.choices and val not in field.choices:
-                return None, f"Valor invalido. Permitidos: {', '.join(field.choices)}"
+                return None, f"Valor '{val}' no es valido. Valores permitidos: {', '.join(field.choices)}"
             return val, None
 
         case "json":
@@ -99,9 +99,9 @@ def coerce_value(raw: Any, field: ExportField) -> tuple[Any, str | None]:
             if isinstance(raw, str):
                 try:
                     return json.loads(raw), None
-                except json.JSONDecodeError:
-                    return None, "JSON invalido"
-            return None, "Valor no es JSON valido"
+                except json.JSONDecodeError as e:
+                    return None, f"JSON invalido (valor: '{raw[:50]}...', error: {str(e)})"
+            return None, f"Valor '{raw}' no es JSON valido (debe ser un objeto o array JSON)"
 
         case _:
             return str(raw), None

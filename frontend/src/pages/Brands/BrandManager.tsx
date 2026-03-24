@@ -23,10 +23,12 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Add, Delete, Edit, Visibility } from '@mui/icons-material';
+import { Add, Delete, Edit, Visibility, FileUpload, FileDownload } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createBrand, deleteBrand, listBrands, updateBrand } from '../../api/brands';
 import type { Brand, BrandCreate, BrandUpdate } from '../../types/brand';
+import ImportDialog from '../../components/ImportDialog';
+import ExportDialog from '../../components/ExportDialog';
 
 export default function BrandManager() {
   const navigate = useNavigate();
@@ -50,6 +52,10 @@ export default function BrandManager() {
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<Brand | null>(null);
+
+  // Import/Export dialogs
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const { data: brands = [], isLoading } = useQuery({
     queryKey: ['brands'],
@@ -106,13 +112,29 @@ export default function BrandManager() {
             Gestiona el catalogo de marcas disponibles para los productos
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => { setMutError(''); setCreateOpen(true); }}
-        >
-          Nueva Marca
-        </Button>
+        <Box display="flex" gap={1}>
+          <Button
+            variant="outlined"
+            startIcon={<FileUpload />}
+            onClick={() => setImportOpen(true)}
+          >
+            Importar
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownload />}
+            onClick={() => setExportOpen(true)}
+          >
+            Exportar
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={() => { setMutError(''); setCreateOpen(true); }}
+          >
+            Nueva Marca
+          </Button>
+        </Box>
       </Box>
 
       {mutError && (
@@ -350,6 +372,24 @@ export default function BrandManager() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Dialog: importar */}
+      <ImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        resource="brands"
+        resourceLabel="Marcas"
+        onSuccess={invalidate}
+      />
+
+      {/* Dialog: exportar */}
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        resource="brands"
+        resourceLabel="Marcas"
+        totalRecords={brands.length}
+      />
     </Box>
   );
 }

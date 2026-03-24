@@ -70,6 +70,9 @@ def _build_configs() -> dict[str, ExportConfig]:
     from app.models.user import User
     from app.models.quality_rule import QualityRule
     from app.models.attribute_family import AttributeFamily
+    from app.models.brand import Brand
+    from app.models.channel import Channel
+    from app.models.supplier import Supplier
 
     _STATUSES = ["draft", "in_review", "approved", "ready", "retired"]
 
@@ -215,6 +218,66 @@ def _build_configs() -> dict[str, ExportConfig]:
                 ExportField("description", "Descripcion", "str", required=False),
                 ExportField("category_id", "ID Categoria", "str", required=False, default_include=False,
                             fk=FKConstraint("categories", "id")),
+                ExportField("created_at", "Creado", "datetime", readonly=True, default_include=False),
+                ExportField("updated_at", "Actualizado", "datetime", readonly=True, default_include=False),
+            ],
+        ),
+
+        "brands": ExportConfig(
+            resource="brands",
+            label="Marcas",
+            model=Brand,
+            auto_pk=True,
+            upsert_key=["slug"],
+            fields=[
+                ExportField("id", "ID", "str", readonly=True, default_include=False),
+                ExportField("name", "Nombre", "str", required=True),
+                ExportField("slug", "Slug", "str", required=True),
+                ExportField("description", "Descripcion", "str", required=False),
+                ExportField("website", "Sitio Web", "str", required=False),
+                ExportField("logo_url", "URL Logo", "str", required=False, default_include=False),
+                ExportField("active", "Activa", "bool", required=False),
+                ExportField("created_at", "Creado", "datetime", readonly=True, default_include=False),
+                ExportField("updated_at", "Actualizado", "datetime", readonly=True, default_include=False),
+            ],
+        ),
+
+        "channels": ExportConfig(
+            resource="channels",
+            label="Canales",
+            model=Channel,
+            auto_pk=True,
+            upsert_key=["code"],
+            fields=[
+                ExportField("id", "ID", "str", readonly=True, default_include=False),
+                ExportField("name", "Nombre", "str", required=True),
+                ExportField("code", "Codigo", "str", required=True),
+                ExportField("description", "Descripcion", "str", required=False),
+                ExportField("active", "Activo", "bool", required=False),
+                ExportField("connection_type", "Tipo Conexion", "enum", required=False,
+                            choices=["ftp", "ssh", "http_post"], default_include=False),
+                ExportField("connection_config", "Config Conexion (JSON)", "json", required=False,
+                            readonly=True, default_include=False),
+                ExportField("created_at", "Creado", "datetime", readonly=True, default_include=False),
+                ExportField("updated_at", "Actualizado", "datetime", readonly=True, default_include=False),
+            ],
+        ),
+
+        "suppliers": ExportConfig(
+            resource="suppliers",
+            label="Proveedores",
+            model=Supplier,
+            auto_pk=True,
+            upsert_key=["code"],
+            fields=[
+                ExportField("id", "ID", "str", readonly=True, default_include=False),
+                ExportField("name", "Nombre", "str", required=True),
+                ExportField("code", "Codigo", "str", required=False),
+                ExportField("country", "Pais (ISO)", "str", required=False, max_length=3),
+                ExportField("contact_email", "Email Contacto", "str", required=False),
+                ExportField("contact_phone", "Telefono Contacto", "str", required=False),
+                ExportField("notes", "Notas", "str", required=False, default_include=False),
+                ExportField("active", "Activo", "bool", required=False),
                 ExportField("created_at", "Creado", "datetime", readonly=True, default_include=False),
                 ExportField("updated_at", "Actualizado", "datetime", readonly=True, default_include=False),
             ],

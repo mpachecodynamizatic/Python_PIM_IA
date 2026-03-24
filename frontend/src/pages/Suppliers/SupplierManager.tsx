@@ -23,10 +23,12 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Add, Delete, Edit, Visibility } from '@mui/icons-material';
+import { Add, Delete, Edit, Visibility, FileUpload, FileDownload } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../../api/product_extras';
 import type { Supplier } from '../../types/product';
+import ImportDialog from '../../components/ImportDialog';
+import ExportDialog from '../../components/ExportDialog';
 
 type SupplierCreate = Omit<Supplier, 'id' | 'created_at' | 'updated_at'>;
 
@@ -52,6 +54,10 @@ export default function SupplierManager() {
   const [editForm, setEditForm] = useState<Partial<Supplier>>({});
 
   const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
+
+  // Import/Export dialogs
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const { data: suppliers = [], isLoading } = useQuery({
     queryKey: ['suppliers'],
@@ -102,13 +108,29 @@ export default function SupplierManager() {
             Gestiona el catalogo de proveedores para vincularlos a productos
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => { setMutError(''); setNewForm({ ...EMPTY_FORM }); setCreateOpen(true); }}
-        >
-          Nuevo Proveedor
-        </Button>
+        <Box display="flex" gap={1}>
+          <Button
+            variant="outlined"
+            startIcon={<FileUpload />}
+            onClick={() => setImportOpen(true)}
+          >
+            Importar
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<FileDownload />}
+            onClick={() => setExportOpen(true)}
+          >
+            Exportar
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={() => { setMutError(''); setNewForm({ ...EMPTY_FORM }); setCreateOpen(true); }}
+          >
+            Nuevo Proveedor
+          </Button>
+        </Box>
       </Box>
 
       {mutError && (
@@ -374,6 +396,24 @@ export default function SupplierManager() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Dialog: importar */}
+      <ImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        resource="suppliers"
+        resourceLabel="Proveedores"
+        onSuccess={invalidate}
+      />
+
+      {/* Dialog: exportar */}
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        resource="suppliers"
+        resourceLabel="Proveedores"
+        totalRecords={suppliers.length}
+      />
     </Box>
   );
 }
