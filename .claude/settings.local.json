@@ -32,7 +32,12 @@
       "Bash(.venv/Scripts/python:*)",
       "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python:*)",
       "Bash(ls:*)",
-      "Bash(PYTHONIOENCODING=utf-8 python -m pytest:*)"
+      "Bash(PYTHONIOENCODING=utf-8 python -m pytest:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(xargs:*)",
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(sqlite3:*)"
     ]
   }
 }

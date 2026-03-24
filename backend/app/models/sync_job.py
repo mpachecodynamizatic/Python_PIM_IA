@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -9,16 +9,8 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 class SyncJob(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "sync_jobs"
 
-    # Channel (FK + denormalized fields for display without joins)
-    channel_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("channels.id", ondelete="RESTRICT"), nullable=False, index=True
-    )
-    channel_code: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    channel_name: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    # Connection config — copied from channel at job creation, can be overridden
-    connection_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    connection_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+    # Channel code (string, matches table structure)
+    channel: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
 
     status: Mapped[str] = mapped_column(
         String(20),

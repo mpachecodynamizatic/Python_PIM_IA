@@ -14,7 +14,7 @@ if not exist ".venv\Scripts\activate.bat" (
     python -m venv .venv
 )
 
-start "PIM Backend" cmd /k "cd /d "%~dp0backend" && call .venv\Scripts\activate.bat && pip install -r requirements.txt -q && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+start "PIM Backend" cmd /k "cd /d "%~dp0backend" && call .venv\Scripts\activate.bat && pip install -r requirements.txt -q && python -m uvicorn app.main:app --reload --port 8001"
 
 :: --- FRONTEND ---
 echo [2/2] Preparando Frontend...
