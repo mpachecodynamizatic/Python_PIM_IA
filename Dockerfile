@@ -39,10 +39,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install nginx and supervisor
+# Install nginx, supervisor and curl (for healthcheck)
 RUN apt-get update && apt-get install -y \
     nginx \
     supervisor \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies from backend-setup stage
@@ -62,7 +63,7 @@ COPY nginx.conf /etc/nginx/sites-available/default
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Create necessary directories
-RUN mkdir -p /var/log/supervisor /app/backend/pim.db
+RUN mkdir -p /var/log/supervisor /app/backend
 
 # Expose port
 EXPOSE 5006
