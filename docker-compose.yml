@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  pim-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    ports:
+      - "5006:5006"
+    environment:
+      # Database
+      - DATABASE_URL=sqlite:///./pim.db
+
+      # Security
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@pim.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+
+      # CORS
+      - CORS_ORIGINS=*
+
+      # Tokens
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - REFRESH_TOKEN_EXPIRE_MINUTES=10080
+
+      # External PIM (opcional - solo si se usa import desde PIM externo)
+      - PIM_BASE_URL=${PIM_BASE_URL:-}
+      - PIM_MAIL=${PIM_MAIL:-}
+      - PIM_PASSWORD=${PIM_PASSWORD:-}
+      - PIM_SSL_VERIFY=${PIM_SSL_VERIFY:-true}
+
+    volumes:
+      # Persistir la base de datos SQLite
+      - pim-data:/app/backend
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  pim-data:
+    driver: local

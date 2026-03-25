@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/.venv
+backend/venv
+backend/env
+*.egg-info
+.pytest_cache
+.coverage
+
+# Database
+backend/pim.db
+backend/pim.db-journal
+*.db
+*.db-journal
+
+# Node
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+docs/
+
+# Tests
+backend/tests/
+frontend/src/**/*.test.ts
+frontend/src/**/*.test.tsx
+
+# Misc
+.editorconfig
+.prettierrc
+.eslintrc.js

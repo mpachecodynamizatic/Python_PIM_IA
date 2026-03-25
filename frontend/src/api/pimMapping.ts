@@ -94,3 +94,20 @@ export const updateMapping = async (
 export const deleteMapping = async (resource: string): Promise<void> => {
   await client.delete(`/pim-mappings/${resource}`);
 };
+
+export interface ImportStats {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: number;
+}
+
+export interface ImportResponse {
+  message: string;
+  stats: ImportStats;
+}
+
+export const importResource = async (resource: string): Promise<ImportResponse> => {
+  const { data } = await client.post(`/pim-mappings/${resource}/import`);
+  return data;
+};

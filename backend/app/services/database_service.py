@@ -386,8 +386,8 @@ async def import_from_external_pim(db: AsyncSession) -> dict[str, int]:
                     # Create or get brand
                     if marca_pim and marca_pim not in brand_map:
                         brand = Brand(
-                            code=marca_codigo,
                             name=marca_pim,
+                            slug=marca_pim.lower().replace(' ', '-'),
                             description=f"Imported from external PIM: {marca_pim}"
                         )
                         db.add(brand)
@@ -398,8 +398,8 @@ async def import_from_external_pim(db: AsyncSession) -> dict[str, int]:
                     # Create or get category
                     if categoria and categoria not in category_map:
                         category = Category(
-                            code=categoria.lower().replace(' ', '_'),
                             name=categoria,
+                            slug=categoria.lower().replace(' ', '-'),
                             description=f"Imported from external PIM: {categoria}"
                         )
                         db.add(category)

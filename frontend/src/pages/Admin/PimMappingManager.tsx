@@ -22,7 +22,7 @@ import {
   Autocomplete,
   CircularProgress,
 } from '@mui/material';
-import { Add, Delete, Save, Refresh, ArrowForward } from '@mui/icons-material';
+import { Add, Delete, Save, Refresh, ArrowForward, CloudDownload } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   listAvailableResources,
@@ -31,6 +31,7 @@ import {
   getMappingByResource,
   createMapping,
   updateMapping,
+  importResource,
   type PimFieldMapping,
 } from '../../api/pimMapping';
 
@@ -124,6 +125,21 @@ export default function PimMappingManager() {
     },
     onError: (err: any) => {
       setError(err.response?.data?.detail || 'Error al guardar configuración');
+    },
+  });
+
+  // Import resource
+  const importMutation = useMutation({
+    mutationFn: () => importResource(selectedResource),
+    onSuccess: (data) => {
+      const stats = data.stats;
+      setSuccess(
+        `Importación completada: ${stats.created} creados, ${stats.updated} actualizados, ${stats.skipped} omitidos, ${stats.errors} errores`
+      );
+      setTimeout(() => setSuccess(''), 8000);
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Error al importar desde PIM externo');
     },
   });
 
@@ -247,8 +263,20 @@ export default function PimMappingManager() {
                   }
                   onClick={() => saveMutation.mutate()}
                   disabled={saveMutation.isPending}
+                  sx={{ mr: 1 }}
                 >
                   Guardar Configuración
+                </Button>
+                <Button
+                  variant="contained"
+                  color="success"
+                  startIcon={
+                    importMutation.isPending ? <CircularProgress size={20} /> : <CloudDownload />
+                  }
+                  onClick={() => importMutation.mutate()}
+                  disabled={importMutation.isPending || !currentMapping || !isActive}
+                >
+                  Importar
                 </Button>
               </Box>
             </Box>

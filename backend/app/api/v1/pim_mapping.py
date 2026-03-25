@@ -243,3 +243,34 @@ async def delete_mapping(
 
     await db.delete(mapping)
     await db.commit()
+
+
+@router.post("/{resource}/import")
+async def import_resource(
+    resource: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_roles("admin")),
+):
+    """
+    Importa un recurso específico desde el PIM externo usando su mapeo configurado.
+
+    Args:
+        resource: Tipo de recurso (products, brands, categories, etc.)
+
+    Returns:
+        Estadísticas de importación (created, updated, skipped, errors)
+
+    Raises:
+        400: Si no hay mapeo activo o hay error de conexión
+        404: Si el recurso no es soportado
+    """
+    try:
+        counts = await pim_mapping_service.import_resource_from_external_pim(db, resource)
+        return {
+            "message": f"Importación de '{resource}' completada",
+            "stats": counts
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Error inesperado durante la importación: {str(e)}")

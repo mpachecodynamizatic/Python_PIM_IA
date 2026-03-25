@@ -1,5 +1,6 @@
 """Servicio para mapeo de campos del PIM externo."""
 import logging
+import re
 import requests
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,75 @@ from app.models.supplier import Supplier
 from app.models.channel import Channel
 
 logger = logging.getLogger(__name__)
+
+
+def _generate_slug(text: str) -> str:
+    """
+    Generate a URL-friendly slug from text.
+
+    Args:
+        text: Text to convert to slug
+
+    Returns:
+        Slugified text (lowercase, alphanumeric + hyphens)
+    """
+    # Convert to lowercase
+    slug = text.lower()
+    # Replace spaces and underscores with hyphens
+    slug = re.sub(r'[\s_]+', '-', slug)
+    # Remove non-alphanumeric characters except hyphens
+    slug = re.sub(r'[^a-z0-9-]', '', slug)
+    # Remove multiple consecutive hyphens
+    slug = re.sub(r'-+', '-', slug)
+    # Strip hyphens from start and end
+    slug = slug.strip('-')
+    return slug
+
+
+def _filter_fields_by_resource(fields: list[ExternalPimFieldSchema], resource: str) -> list[ExternalPimFieldSchema]:
+    """
+    Filtra campos según el recurso para mostrar solo los relevantes.
+
+    Args:
+        fields: Lista completa de campos introspectados
+        resource: Tipo de recurso (products, brands, categories, etc.)
+
+    Returns:
+        Lista filtrada de campos relevantes para el recurso
+    """
+    # Mapeo de recursos a patrones de campos relevantes
+    resource_patterns = {
+        "brands": ["marca", "brand"],
+        "categories": ["categoria", "category"],
+        "suppliers": ["proveedor", "supplier", "fabricante"],
+        "channels": ["canal", "channel", "tienda", "store"],
+    }
+
+    # Para productos, mostrar todos los campos
+    if resource == "products":
+        return fields
+
+    # Para otros recursos, filtrar por patrones relevantes
+    patterns = resource_patterns.get(resource, [])
+    if not patterns:
+        return fields
+
+    # Filtrar campos que coincidan con los patrones
+    relevant_fields = []
+    other_fields = []
+
+    for field in fields:
+        field_lower = field.field_path.lower()
+        is_relevant = any(pattern in field_lower for pattern in patterns)
+
+        if is_relevant:
+            relevant_fields.append(field)
+        else:
+            other_fields.append(field)
+
+    # Retornar primero los campos relevantes, luego los demás
+    # Esto permite ver los campos importantes al principio
+    return relevant_fields + other_fields
 
 
 async def introspect_external_fields(resource: str, db: AsyncSession) -> list[ExternalPimFieldSchema]:
@@ -32,16 +102,17 @@ async def introspect_external_fields(resource: str, db: AsyncSession) -> list[Ex
         ValueError: Si la conexión al PIM falla o el recurso no es válido
     """
     # Mapeo de recursos a endpoints de la API externa
+    # Para recursos que no tienen endpoint propio (brands, categories),
+    # usamos /B2bProductos ya que contiene esa información
     endpoint_map = {
         "products": "/B2bProductos",
-        "categories": "/Categorias",  # Hipotético
-        "brands": "/Marcas",  # Hipotético
+        "categories": "/B2bProductos",  # Usa productos (tienen campo 'categorias')
+        "brands": "/B2bProductos",  # Usa productos (tienen campo 'marca')
+        "suppliers": "/B2bProductos",
+        "channels": "/B2bProductos",
     }
 
-    endpoint = endpoint_map.get(resource)
-    if not endpoint:
-        # Usar endpoint de productos por defecto
-        endpoint = "/B2bProductos"
+    endpoint = endpoint_map.get(resource, "/B2bProductos")
 
     ssl_verify = settings.PIM_SSL_VERIFY.lower() != 'false'
 
@@ -109,7 +180,10 @@ async def introspect_external_fields(resource: str, db: AsyncSession) -> list[Ex
                     ))
 
         introspect_dict(sample)
-        return fields
+
+        # Filtrar campos según el recurso para mostrar solo los relevantes
+        filtered_fields = _filter_fields_by_resource(fields, resource)
+        return filtered_fields
 
     except requests.HTTPError as e:
         logger.error(f"HTTP error al conectar con PIM externo: {e}")
@@ -303,7 +377,30 @@ async def _apply_transform(
             if auto_create:
                 # Crear entidad si no existe
                 logger.info(f"Auto-creating {table} with {lookup_by}='{s}'")
-                entity = model(**{lookup_by: s})
+
+                # Preparar datos para crear la entidad
+                entity_data = {lookup_by: s}
+
+                # Generar slug si la entidad lo requiere (Brand, Category, Supplier, Channel)
+                if hasattr(model, 'slug'):
+                    base_slug = _generate_slug(s)
+                    slug = base_slug
+
+                    # Check if slug already exists and add suffix if needed
+                    counter = 1
+                    while True:
+                        existing_slug = await db.execute(
+                            select(model).where(model.slug == slug)
+                        )
+                        if existing_slug.scalar_one_or_none() is None:
+                            break
+                        slug = f"{base_slug}-{counter}"
+                        counter += 1
+
+                    entity_data['slug'] = slug
+
+                # Crear la entidad con los datos preparados
+                entity = model(**entity_data)
                 db.add(entity)
                 await db.flush()
             else:
@@ -349,3 +446,196 @@ def _set_nested_value(data: dict, path: str, value: any):
             current = current[key]
         # Establecer valor en el último nivel
         current[keys[-1]] = value
+
+
+async def import_resource_from_external_pim(
+    db: AsyncSession,
+    resource: str,
+) -> dict[str, int]:
+    """
+    Importa un recurso específico desde el PIM externo usando su mapeo configurado.
+
+    Args:
+        db: Sesión de base de datos
+        resource: Tipo de recurso (products, brands, categories, etc.)
+
+    Returns:
+        Dict con contadores de importación (created, updated, skipped, errors)
+
+    Raises:
+        ValueError: Si no hay mapeo activo o hay error de conexión
+    """
+    # Verificar que existe mapeo activo
+    result = await db.execute(
+        select(PimResourceMapping).where(
+            PimResourceMapping.resource == resource,
+            PimResourceMapping.is_active == True
+        )
+    )
+    mapping_config = result.scalar_one_or_none()
+    if not mapping_config:
+        raise ValueError(f"No hay configuración de mapeo activa para el recurso '{resource}'")
+
+    # Mapeo de recursos a modelos
+    from app.models.product import Product
+
+    model_map = {
+        "products": Product,
+        "brands": Brand,
+        "categories": Category,
+        "suppliers": Supplier,
+        "channels": Channel,
+    }
+
+    model = model_map.get(resource)
+    if not model:
+        raise ValueError(f"Recurso '{resource}' no soportado para importación")
+
+    # Obtener datos del PIM externo
+    endpoint = "/B2bProductos"  # Único endpoint disponible
+    ssl_verify = settings.PIM_SSL_VERIFY.lower() != 'false'
+
+    counts = {
+        'created': 0,
+        'updated': 0,
+        'skipped': 0,
+        'errors': 0,
+    }
+
+    try:
+        # Autenticación
+        login_url = f"{settings.PIM_BASE_URL}/auth/login"
+        auth_payload = {"mail": settings.PIM_MAIL, "password": settings.PIM_PASSWORD}
+
+        login_resp = requests.post(login_url, json=auth_payload, verify=ssl_verify, timeout=30)
+        login_resp.raise_for_status()
+        token_data = login_resp.json()
+        token = token_data.get('token') or token_data
+
+        # Obtener datos
+        get_url = f"{settings.PIM_BASE_URL}{endpoint}"
+        headers = {"accept": "application/json", "Authorization": f"Bearer {token}"}
+
+        resp = requests.get(get_url, headers=headers, verify=ssl_verify, timeout=60)
+        resp.raise_for_status()
+
+        items = resp.json()
+        logger.info(f"Retrieved {len(items)} items from external PIM for resource '{resource}'")
+
+        # Para recursos que no son productos, primero extraer valores únicos
+        # para evitar procesar duplicados (ej: 1000 productos con 4 marcas)
+        if resource != "products":
+            unique_values = {}  # key: valor del campo principal, value: item de ejemplo
+            pk_field = "name"  # Para brands, categories, etc. usamos 'name' como PK
+
+            for item in items:
+                try:
+                    # Aplicar mapeo para obtener el campo principal
+                    entity_data = await apply_field_mapping(db, resource, item)
+                    pk_value = entity_data.get(pk_field)
+
+                    if pk_value and pk_value not in unique_values:
+                        unique_values[pk_value] = entity_data
+                except Exception as e:
+                    logger.debug(f"Skipping item due to mapping error during deduplication: {e}")
+                    continue
+
+            logger.info(f"Found {len(unique_values)} unique {resource} from {len(items)} products")
+            # Reemplazar items con los valores únicos ya mapeados
+            items_to_process = list(unique_values.values())
+        else:
+            items_to_process = items
+
+        # Procesar cada item
+        for idx, item in enumerate(items_to_process, 1):
+            try:
+                # Si ya está mapeado (recursos no-productos), usar directamente
+                # Si no, aplicar mapeo (productos)
+                if resource != "products" and isinstance(item, dict) and 'name' in item:
+                    entity_data = item  # Ya mapeado en la fase de deduplicación
+                else:
+                    entity_data = await apply_field_mapping(db, resource, item)
+
+                # Determinar clave primaria (por defecto 'id', pero puede ser 'sku', 'name', etc.)
+                # Para products usamos 'sku', para otros recursos usamos 'name'
+                if resource == "products":
+                    pk_field = "sku"
+                    pk_value = entity_data.get("sku")
+                else:
+                    pk_field = "name"
+                    pk_value = entity_data.get("name")
+
+                # Log de progreso cada 10 items
+                if idx % 10 == 0:
+                    logger.info(f"Processing {resource} {idx}/{len(items_to_process)}: {pk_value}")
+
+                if not pk_value:
+                    logger.warning(f"Skipping item without {pk_field}: {item.get('id', 'unknown')}")
+                    counts['skipped'] += 1
+                    continue
+
+                # Auto-generar campos requeridos que no están mapeados
+                # Si el modelo tiene 'slug' y no está en entity_data, generarlo desde 'name'
+                if hasattr(model, 'slug') and 'slug' not in entity_data and 'name' in entity_data:
+                    base_slug = _generate_slug(entity_data['name'])
+                    slug = base_slug
+
+                    # Verificar si el slug ya existe y añadir sufijo si es necesario
+                    # Límite de 100 intentos para evitar loops infinitos
+                    counter = 1
+                    max_attempts = 100
+                    while counter < max_attempts:
+                        existing_slug = await db.execute(
+                            select(model).where(model.slug == slug)
+                        )
+                        if existing_slug.scalar_one_or_none() is None:
+                            break
+                        slug = f"{base_slug}-{counter}"
+                        counter += 1
+
+                    if counter >= max_attempts:
+                        logger.error(f"Could not generate unique slug for '{entity_data['name']}' after {max_attempts} attempts")
+                        counts['errors'] += 1
+                        continue
+
+                    entity_data['slug'] = slug
+
+                # Buscar si ya existe
+                query = select(model).where(getattr(model, pk_field) == pk_value)
+                existing = await db.execute(query)
+                entity = existing.scalar_one_or_none()
+
+                if entity:
+                    # Actualizar existente
+                    for key, value in entity_data.items():
+                        if key != pk_field:  # No cambiar la PK
+                            setattr(entity, key, value)
+                    counts['updated'] += 1
+                else:
+                    # Crear nuevo
+                    entity = model(**entity_data)
+                    db.add(entity)
+                    counts['created'] += 1
+
+            except ValueError as e:
+                # Error de mapeo (campo requerido faltante, FK no encontrado, etc.)
+                logger.warning(f"Skipping item due to mapping error: {e}")
+                counts['skipped'] += 1
+                continue
+            except Exception as e:
+                logger.error(f"Error processing item: {e}")
+                counts['errors'] += 1
+                continue
+
+        # Commit todos los cambios
+        await db.commit()
+
+        logger.info(f"Import of '{resource}' completed: {counts}")
+        return counts
+
+    except requests.HTTPError as e:
+        logger.error(f"HTTP error connecting to external PIM: {e}")
+        raise ValueError(f"No se pudo conectar al PIM externo: {e}")
+    except Exception as e:
+        logger.exception("Unexpected error importing from external PIM")
+        raise ValueError(f"Error al importar desde PIM externo: {e}")
