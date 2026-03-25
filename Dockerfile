@@ -50,10 +50,8 @@ RUN apt-get update && apt-get install -y \
 COPY --from=backend-setup /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=backend-setup /usr/local/bin /usr/local/bin
 
-# Copy backend application (copy app module and other necessary files)
-COPY backend/app /app/app
-COPY backend/alembic /app/alembic
-COPY backend/alembic.ini /app/alembic.ini
+# Copy entire backend directory (mirrors local dev: backend/ contains app/, alembic/, etc.)
+COPY backend/ /app/
 
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /app/frontend/dist /var/www/html
