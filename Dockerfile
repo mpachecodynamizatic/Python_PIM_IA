@@ -63,14 +63,14 @@ COPY nginx.conf /etc/nginx/sites-available/default
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Create necessary directories
-RUN mkdir -p /var/log/supervisor
+RUN mkdir -p /var/log/supervisor /app/data
 
 # Expose port
 EXPOSE 5006
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV DATABASE_URL=sqlite:///./pim.db
+ENV DATABASE_URL=sqlite:////app/data/pim.db
 ENV PORT=5006
 
 # Start supervisor (will manage both nginx and uvicorn)

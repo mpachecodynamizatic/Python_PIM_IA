@@ -11,7 +11,7 @@ services:
       - "5006:5006"
     environment:
       # Database
-      - DATABASE_URL=sqlite:///./pim.db
+      - DATABASE_URL=sqlite:////app/data/pim.db
 
       # Security
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
@@ -32,8 +32,8 @@ services:
       - PIM_SSL_VERIFY=${PIM_SSL_VERIFY:-true}
 
     volumes:
-      # Persistir la base de datos SQLite
-      - pim-data:/app
+      # Persistir solo la base de datos (no el código de la app)
+      - pim-data:/app/data
 
     restart: unless-stopped
 
