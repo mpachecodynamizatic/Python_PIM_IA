@@ -33,7 +33,7 @@ services:
 
     volumes:
       # Persistir la base de datos SQLite
-      - pim-data:/app/backend
+      - pim-data:/app
 
     restart: unless-stopped
 

@@ -50,8 +50,10 @@ RUN apt-get update && apt-get install -y \
 COPY --from=backend-setup /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=backend-setup /usr/local/bin /usr/local/bin
 
-# Copy backend application
-COPY backend/ ./backend/
+# Copy backend application (copy app module and other necessary files)
+COPY backend/app /app/app
+COPY backend/alembic /app/alembic
+COPY backend/alembic.ini /app/alembic.ini
 
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /app/frontend/dist /var/www/html
@@ -63,7 +65,7 @@ COPY nginx.conf /etc/nginx/sites-available/default
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Create necessary directories
-RUN mkdir -p /var/log/supervisor /app/backend
+RUN mkdir -p /var/log/supervisor
 
 # Expose port
 EXPOSE 5006

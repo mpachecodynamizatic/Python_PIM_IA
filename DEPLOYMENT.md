@@ -51,7 +51,7 @@ Para que la base de datos SQLite persista entre deployments:
 
 1. Ve a **Storage** → **Add Volume**
 2. Nombre: `pim-data`
-3. Mount Path: `/app/backend`
+3. Mount Path: `/app`
 
 Esto garantiza que `pim.db` no se pierda al reiniciar o redesplegar.
 
@@ -136,7 +136,7 @@ Esto indica que nginx no puede conectar con uvicorn:
 
 ### Base de datos se pierde al redesplegar
 
-Asegúrate de haber configurado correctamente el volumen persistente en `/app/backend`
+Asegúrate de haber configurado correctamente el volumen persistente en `/app`
 
 ### El frontend no carga o muestra errores de API
 
@@ -149,7 +149,7 @@ Para hacer backup de la base de datos SQLite:
 
 ```bash
 # Desde Coolify, ejecuta en el contenedor:
-docker cp <container-id>:/app/backend/pim.db ./backup-$(date +%Y%m%d).db
+docker cp <container-id>:/app/pim.db ./backup-$(date +%Y%m%d).db
 ```
 
 O usa el sistema de backups de Coolify si está configurado para el volumen.
@@ -158,7 +158,7 @@ O usa el sistema de backups de Coolify si está configurado para el volumen.
 
 ```bash
 # Copia el backup al contenedor:
-docker cp ./backup-20260325.db <container-id>:/app/backend/pim.db
+docker cp ./backup-20260325.db <container-id>:/app/pim.db
 
 # Reinicia el contenedor:
 # En Coolify: "Restart"
