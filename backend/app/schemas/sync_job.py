@@ -21,9 +21,7 @@ class SyncJobCreate(BaseModel):
 
 class SyncJobRead(BaseModel):
     id: str
-    channel_id: str
-    channel_code: str
-    channel_name: str
+    channel: str  # Channel code (e.g., "b2c", "amazon")
     connection_type: str | None = None
     connection_config: dict = {}
     status: str

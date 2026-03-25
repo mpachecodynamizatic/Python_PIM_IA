@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_roles
+from app.core.dependencies import get_current_user, require_roles
+from app.core.permissions import RESOURCES, RESOURCE_LABELS, PERMISSION_LEVELS, ROLE_PERMISSIONS
 from app.models.user import User
-from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.schemas.user import PasswordChange, UserCreate, UserRead, UserUpdate
 from app.services import user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -19,7 +20,10 @@ async def create_user(
     _admin: User = Depends(require_roles("admin")),
 ):
     user = await user_service.create_user(db, body)
-    return user
+    user_id = user.id  # Store ID before commit
+    await db.commit()
+    # Re-query to avoid MissingGreenlet error after commit
+    return await user_service.get_user(db, uuid.UUID(user_id))
 
 
 @router.get("", response_model=list[UserRead])
@@ -48,4 +52,50 @@ async def update_user(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_roles("admin")),
 ):
-    return await user_service.update_user(db, user_id, body)
+    await user_service.update_user(db, user_id, body)
+    await db.commit()
+    # Re-query to avoid MissingGreenlet error after commit
+    return await user_service.get_user(db, user_id)
+
+
+@router.delete("/{user_id}", status_code=204)
+async def delete_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+):
+    await user_service.delete_user(db, user_id, current_user.id)
+    await db.commit()
+    return None
+
+
+@router.patch("/{user_id}/password", status_code=204)
+async def change_password(
+    user_id: uuid.UUID,
+    body: PasswordChange,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Change user password. Users can change their own (requires current password), admins can change any."""
+    await user_service.change_password(db, user_id, body, current_user)
+    await db.commit()
+    return None
+
+
+@router.get("/permissions/resources")
+async def get_permission_resources(
+    _admin: User = Depends(require_roles("admin")),
+):
+    """Get available resources and permission levels for the permission system."""
+    return {
+        "resources": [
+            {"id": res, "label": RESOURCE_LABELS.get(res, res)}
+            for res in RESOURCES
+        ],
+        "levels": PERMISSION_LEVELS,
+        "roles": {
+            "admin": ROLE_PERMISSIONS["admin"],
+            "editor": ROLE_PERMISSIONS["editor"],
+            "viewer": ROLE_PERMISSIONS["viewer"],
+        },
+    }

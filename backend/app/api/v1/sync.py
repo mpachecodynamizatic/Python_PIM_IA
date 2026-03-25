@@ -73,6 +73,18 @@ async def retry_sync_job(
     return await sync_service.get_sync_job(db, str(job.id))
 
 
+@router.delete("/jobs/{job_id}", status_code=204)
+async def delete_sync_job(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles("admin")),
+):
+    """Delete a sync job. Admin only."""
+    await sync_service.delete_sync_job(db, job_id)
+    await db.commit()
+    return None
+
+
 @router.put("/jobs/{job_id}/schedule", response_model=SyncJobRead)
 async def update_job_schedule(
     job_id: str,

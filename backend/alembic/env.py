@@ -10,19 +10,28 @@ from app.models.base import Base
 
 # Import all models to register them with Base.metadata
 from app.models import (  # noqa: F401
+    attribute_family,
     audit,
+    brand,
     category,
+    channel,
+    export_preference,
+    external_taxonomy,
     import_job,
     mapping_template,
     media,
     product,
+    product_channel,
     product_comment,
+    product_compliance,
+    product_logistics,
     product_sync_history,
     quality_rule,
+    role,
     saved_view,
+    supplier,
     sync_job,
     user,
-    attribute_family,
 )
 
 config = context.config

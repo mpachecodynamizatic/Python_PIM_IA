@@ -34,6 +34,10 @@ import {
   Add,
   ChevronLeft,
   ChevronRight,
+  Delete,
+  Edit,
+  Pause,
+  PlayArrow,
   Refresh,
   Replay,
   Schedule,
@@ -41,6 +45,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createSyncJob,
+  deleteSyncJob,
   getChannels,
   getChannelSyncHistory,
   listSyncJobs,
@@ -104,6 +109,10 @@ export default function SyncDashboard() {
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [scheduleJobId, setScheduleJobId] = useState('');
   const [cronExpression, setCronExpression] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteJobId, setDeleteJobId] = useState('');
+  const [editMode, setEditMode] = useState(false);
+  const [editJobId, setEditJobId] = useState('');
 
   // ── Create dialog state ──────────────────────────────────────────────────
   const [newChannelId, setNewChannelId] = useState('');
@@ -152,6 +161,8 @@ export default function SyncDashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sync-jobs'] });
       setDialogOpen(false);
+      setEditMode(false);
+      setEditJobId('');
       setNewChannelId('');
       setNewConnType('script');
       // Reset script fields
@@ -181,6 +192,20 @@ export default function SyncDashboard() {
       queryClient.invalidateQueries({ queryKey: ['sync-jobs'] });
       setScheduleDialogOpen(false);
     },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (jobId: string) => deleteSyncJob(jobId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sync-jobs'] });
+      setDeleteDialogOpen(false);
+    },
+  });
+
+  const toggleScheduleMutation = useMutation({
+    mutationFn: ({ jobId, enabled }: { jobId: string; enabled: boolean }) =>
+      updateJobSchedule(jobId, { enabled }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync-jobs'] }),
   });
 
   const handleCreate = () => {
@@ -218,6 +243,44 @@ export default function SyncDashboard() {
     setScheduleJobId(job.id);
     setCronExpression(job.cron_expression ?? '');
     setScheduleDialogOpen(true);
+  };
+
+  const openEditDialog = (job: SyncJob) => {
+    setEditMode(true);
+    setEditJobId(job.id);
+    setNewChannelId(channels?.find((ch) => ch.code === job.channel)?.id ?? '');
+    setNewConnType((job.connection_type ?? 'script') as 'script' | 'http_post');
+    setNewMaxRetries(job.max_retries);
+    setNewCron(job.cron_expression ?? '');
+
+    // Pre-fill connection config
+    const config = job.connection_config ?? {};
+    if (job.connection_type === 'script') {
+      setScriptPath((config.script_path as string) ?? '');
+      setScriptArgs((config.args as string) ?? '');
+      setScriptTimeout((config.timeout as number) ?? 300);
+    } else if (job.connection_type === 'http_post') {
+      setConnUrl((config.url as string) ?? '');
+      setConnAuthType((config.auth_type as 'none' | 'basic' | 'bearer') ?? 'none');
+      setConnToken((config.token as string) ?? '');
+      setConnHttpUser((config.username as string) ?? '');
+      setConnHttpPass((config.password as string) ?? '');
+    }
+
+    setDialogOpen(true);
+  };
+
+  const openDeleteDialog = (jobId: string) => {
+    setDeleteJobId(jobId);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDelete = () => {
+    deleteMutation.mutate(deleteJobId);
+  };
+
+  const handleToggleSchedule = (job: SyncJob) => {
+    toggleScheduleMutation.mutate({ jobId: job.id, enabled: !job.scheduled });
   };
 
   const items = data?.items ?? [];
@@ -289,6 +352,7 @@ export default function SyncDashboard() {
                   <TableHead>
                     <TableRow>
                       <TableCell>Canal</TableCell>
+                      <TableCell>Tipo</TableCell>
                       <TableCell>Estado</TableCell>
                       <TableCell>Filtros</TableCell>
                       <TableCell>Metricas</TableCell>
@@ -302,7 +366,7 @@ export default function SyncDashboard() {
                   <TableBody>
                     {items.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={9} align="center">
+                        <TableCell colSpan={10} align="center">
                           <Typography variant="body2" color="text.secondary">
                             No hay sincronizaciones registradas
                           </Typography>
@@ -312,12 +376,12 @@ export default function SyncDashboard() {
                     {items.map((job) => (
                       <TableRow key={job.id} hover>
                         <TableCell>
-                          <Chip label={job.channel_name} size="small" variant="outlined" />
-                          {job.connection_type && (
-                            <Typography variant="caption" color="text.secondary" display="block">
-                              {job.connection_type}
-                            </Typography>
-                          )}
+                          <Chip label={job.channel} size="small" variant="outlined" />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">
+                            {job.connection_type || '-'}
+                          </Typography>
                         </TableCell>
                         <TableCell>
                           <StatusChip status={job.status} />
@@ -365,6 +429,24 @@ export default function SyncDashboard() {
                         </TableCell>
                         <TableCell>
                           <Box display="flex" gap={0.5}>
+                            <Tooltip title="Editar">
+                              <IconButton
+                                size="small"
+                                onClick={() => openEditDialog(job)}
+                              >
+                                <Edit fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title={job.scheduled ? "Desactivar" : "Activar"}>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleToggleSchedule(job)}
+                                disabled={toggleScheduleMutation.isPending}
+                                color={job.scheduled ? "success" : "default"}
+                              >
+                                {job.scheduled ? <Pause fontSize="small" /> : <PlayArrow fontSize="small" />}
+                              </IconButton>
+                            </Tooltip>
                             {(job.status === 'failed' || job.status === 'done' || job.status === 'retry_pending') && (
                               <Tooltip title="Reintentar">
                                 <IconButton
@@ -384,6 +466,15 @@ export default function SyncDashboard() {
                                 <Schedule fontSize="small" />
                               </IconButton>
                             </Tooltip>
+                            <Tooltip title="Eliminar">
+                              <IconButton
+                                size="small"
+                                onClick={() => openDeleteDialog(job.id)}
+                                color="error"
+                              >
+                                <Delete fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                           </Box>
                         </TableCell>
                       </TableRow>
@@ -398,7 +489,7 @@ export default function SyncDashboard() {
                     .filter((j) => j.error_message)
                     .map((j) => (
                       <Alert key={j.id} severity="error" sx={{ mb: 1 }}>
-                        <strong>{j.channel_name}</strong>: {j.error_message}
+                        <strong>{j.channel}</strong>: {j.error_message}
                       </Alert>
                     ))}
                 </Box>
@@ -498,8 +589,17 @@ export default function SyncDashboard() {
       )}
 
       {/* Dialog para crear nuevo job */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Nueva Sincronizacion</DialogTitle>
+      <Dialog
+        open={dialogOpen}
+        onClose={() => {
+          setDialogOpen(false);
+          setEditMode(false);
+          setEditJobId('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{editMode ? 'Editar Sincronizacion' : 'Nueva Sincronizacion'}</DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
             <FormControl fullWidth>
@@ -649,7 +749,15 @@ export default function SyncDashboard() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancelar</Button>
+          <Button
+            onClick={() => {
+              setDialogOpen(false);
+              setEditMode(false);
+              setEditJobId('');
+            }}
+          >
+            Cancelar
+          </Button>
           <Button
             variant="contained"
             onClick={handleCreate}
@@ -660,7 +768,7 @@ export default function SyncDashboard() {
               createMutation.isPending
             }
           >
-            Lanzar
+            {editMode ? 'Guardar' : 'Lanzar'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -701,6 +809,27 @@ export default function SyncDashboard() {
             disabled={!cronExpression || scheduleMutation.isPending}
           >
             Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog para confirmar eliminacion */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} maxWidth="xs">
+        <DialogTitle>Confirmar eliminacion</DialogTitle>
+        <DialogContent>
+          <Typography>
+            ¿Estas seguro de que quieres eliminar este trabajo de sincronizacion? Esta accion no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancelar</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+          >
+            Eliminar
           </Button>
         </DialogActions>
       </Dialog>

@@ -54,11 +54,13 @@ backend/app/
 │   ├── config.py      # Settings via pydantic-settings (lee .env)
 │   ├── database.py    # Engine async SQLite, get_db() dependency
 │   ├── security.py    # JWT encode/decode, hash_password/verify_password
+│   ├── permissions.py # Sistema de permisos granulares (11 recursos, 3 niveles)
 │   └── dependencies.py # get_current_user, require_scopes(), require_roles()
 ├── models/         # SQLAlchemy 2.x ORM (Base + mixins en base.py)
 ├── schemas/        # Pydantic v2 (separados por entidad)
 ├── services/       # Lógica de negocio (entre API y modelos)
 ├── connectors/     # Conectores de sincronización externa (CSV, HTTP, JSON, Shopify, Amazon, WooCommerce)
+├── export/         # Sistema de exportación (configs.py con ExportConfig por recurso)
 └── api/v1/         # Routers FastAPI agrupados en router.py
 ```
 
@@ -74,6 +76,7 @@ backend/app/
 - Audit log en cada `create_product`, `update_product` y `transition_product`
 - Pydantic v2: usar `ConfigDict(from_attributes=True)`, NO la clase `Config` deprecada
 - Al usar `selectinload` para relaciones eager-loaded después de `db.flush()`, re-query en vez de `db.refresh()` para evitar errores `MissingGreenlet`
+- **Configuración de conexión de sync:** Se almacena en `sync_jobs`, NO en `channels`. Cada job puede tener su propia configuración de conexión (script o http_post)
 
 **Transiciones de estado de productos:**
 ```
@@ -83,6 +86,17 @@ draft → in_review → approved → ready → retired
 ```
 
 **Auth:** JWT con `python-jose`. Los admins (`role="admin"`) bypass todos los scope checks en `require_scopes()`.
+
+**Sistema de Permisos (core/permissions.py):**
+- **11 recursos:** products, categories, media, brands, channels, suppliers, sync, quality, i18n, users, settings
+- **3 niveles:** none, read, write
+- **3 roles predefinidos:**
+  - `admin`: acceso write a todo
+  - `editor`: write a productos/categorías/media/marcas/canales/proveedores/sync/calidad/i18n, read a users/settings
+  - `viewer`: read a todo
+- **Permisos personalizables:** Los usuarios pueden tener scopes custom en formato `resource:level` (ej: `"products:read"`, `"categories:write"`)
+- Los scopes personalizados sobrescriben los permisos del rol por defecto
+- Función `has_permission(user, resource, required_level)` para validación
 
 **Conectores (sincronización):**
 - `BaseConnector` (abc) con método `async run(db, filters) → ConnectorResult`
@@ -94,6 +108,12 @@ draft → in_review → approved → ready → retired
 - Loop cada 30-60s en `services/scheduler.py`, arrancado en el lifespan de `main.py`
 - Procesa `SyncSchedule` con expresiones cron (via `croniter`)
 - Reintentos automáticos con backoff exponencial: `5^retry_count` segundos
+
+**Sistema de Exportación (export/configs.py):**
+- Configuraciones de exportación por recurso usando `ExportConfig`
+- Recursos exportables: products, categories, media_assets, brands, suppliers, channels, product_logistics, product_compliance, product_channels, y más
+- Cada `ExportConfig` define: modelo, campos, PKs, FKs, validaciones, transformaciones
+- Soporte para upsert con `upsert_key` para importación
 
 ### Frontend
 
@@ -108,16 +128,34 @@ frontend/src/
 
 **Rutas principales:**
 - `/` — Dashboard
-- `/products` — Lista con vistas guardadas, filtros avanzados (fecha, media, i18n)
+- `/products` — Lista con vistas guardadas, filtros avanzados (fecha, media, i18n), exportación multi-recurso
 - `/products/:sku` — Detalle (tabs: General, Atributos, I18N, SEO, Media, Calidad, Comentarios, Historial)
 - `/categories` — Árbol de taxonomía
 - `/media` — Biblioteca multimedia
 - `/quality` — Dashboard de calidad + Admin de reglas (simulación what-if)
 - `/i18n` — Traducciones pendientes
-- `/sync` — Dashboard de sincronización + Schedules
+- `/sync` — Dashboard de sincronización + Schedules (connection config en jobs, no en channels)
 - `/brands` — Gestión de marcas
 - `/suppliers` — Gestión de proveedores
-- `/channels` — Gestión de canales
+- `/channels` — Gestión de canales (sin connection config)
+- `/admin/users` — CRUD de usuarios (solo admins)
+- `/admin/roles` — Gestión de permisos granulares por usuario (solo admins)
+
+**Sistema de Administración:**
+- **UserManager** (`pages/Admin/UserManager.tsx`):
+  - Crear usuarios con email, password, nombre, rol
+  - Editar nombre, rol, estado activo/inactivo
+  - Eliminar usuarios (con prevención de auto-eliminación)
+  - Visualización con chips de rol (admin/editor/viewer) y estado
+- **RoleManager** (`pages/Admin/RoleManager.tsx`):
+  - Tabla matriz: usuarios (filas) × recursos (columnas)
+  - Selects por celda: none/read/write
+  - Los admins tienen acceso total (no editable)
+  - Los scopes personalizados sobrescriben defaults del rol
+- **Seguridad:**
+  - Solo `user.role === 'admin'` puede acceder a `/admin/*`
+  - Backend valida con `require_roles("admin")` en todos los endpoints
+  - `delete_user()` previene auto-eliminación comparando IDs
 
 ### Base de datos (SQLite)
 
@@ -140,14 +178,16 @@ Fichero: `backend/pim.db` (se crea al arrancar). Tablas principales:
 - `product_comments` — comentarios por SKU con `parent_id` (hilos), `tags` (JSON array), `mentions`
 
 **Sincronización:**
-- `sync_jobs` — trabajos de sync (channel, status, filters, metrics, max_retries, retry_count)
+- `sync_jobs` — trabajos de sync (channel, status, filters, metrics, max_retries, retry_count, **connection_type**, **connection_config**)
+  - connection_type: "script" o "http_post"
+  - connection_config: JSON con configuración específica (script_path, args, timeout para script; url, headers para http_post)
 - `product_sync_statuses` — estado per-SKU per-canal (synced/error/pending)
 - `sync_schedules` — programación cron (channel, cron_expression, enabled, next_run_at)
 
 **Catálogo extendido:**
 - `brands` — maestro de marcas
 - `suppliers` — proveedores
-- `channels` — canales de venta
+- `channels` — canales de venta (name, code, description, active — sin connection config)
 - `product_channels` — asignación producto-canal
 - `product_logistics` — datos logísticos por producto
 - `product_compliance` — datos de conformidad

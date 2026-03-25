@@ -25,3 +25,8 @@ class UserRead(BaseModel):
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+class PasswordChange(BaseModel):
+    current_password: str | None = None
+    new_password: str

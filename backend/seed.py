@@ -830,9 +830,7 @@ async def seed_sync_jobs(db: AsyncSession, channel_code_to_id: dict[str, str]) -
         started = datetime.fromisoformat(j["started_at"]) if j["started_at"] else None
         finished = datetime.fromisoformat(j["finished_at"]) if j["finished_at"] else None
         job = SyncJob(
-            channel_id=channel_id,
-            channel_code=ch_data["code"],
-            channel_name=ch_data["name"],
+            channel=ch_data["code"],
             connection_type=ch_data.get("connection_type"),
             connection_config=ch_data.get("connection_config") or {},
             status=j["status"],

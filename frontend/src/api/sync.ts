@@ -47,6 +47,10 @@ export async function updateJobSchedule(jobId: string, data: SyncScheduleUpdate)
   return response.data;
 }
 
+export async function deleteSyncJob(jobId: string): Promise<void> {
+  await client.delete(`/sync/jobs/${jobId}`);
+}
+
 export async function getProductSyncHistory(
   sku: string,
   page = 1,

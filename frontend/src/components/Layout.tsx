@@ -30,6 +30,10 @@ import {
   Storefront as BrandIcon,
   LocalShipping as SupplierIcon,
   Hub as ChannelIcon,
+  People as PeopleIcon,
+  Security as SecurityIcon,
+  Badge as BadgeIcon,
+  Storage as StorageIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -78,6 +82,54 @@ export default function Layout() {
             <ListItemText primary={item.text} />
           </ListItemButton>
         ))}
+        {user?.role === 'admin' && (
+          <>
+            <Divider sx={{ my: 1 }} />
+            <Typography variant="overline" sx={{ px: 2, py: 1, color: 'text.secondary' }}>
+              Administración
+            </Typography>
+            <ListItemButton
+              selected={location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users')}
+              onClick={() => {
+                navigate('/admin/users');
+                setMobileOpen(false);
+              }}
+            >
+              <ListItemIcon><PeopleIcon /></ListItemIcon>
+              <ListItemText primary="Usuarios" />
+            </ListItemButton>
+            <ListItemButton
+              selected={location.pathname === '/admin/roles' || location.pathname.startsWith('/admin/roles')}
+              onClick={() => {
+                navigate('/admin/roles');
+                setMobileOpen(false);
+              }}
+            >
+              <ListItemIcon><BadgeIcon /></ListItemIcon>
+              <ListItemText primary="Roles" />
+            </ListItemButton>
+            <ListItemButton
+              selected={location.pathname === '/admin/permissions' || location.pathname.startsWith('/admin/permissions')}
+              onClick={() => {
+                navigate('/admin/permissions');
+                setMobileOpen(false);
+              }}
+            >
+              <ListItemIcon><SecurityIcon /></ListItemIcon>
+              <ListItemText primary="Permisos" />
+            </ListItemButton>
+            <ListItemButton
+              selected={location.pathname === '/admin/database' || location.pathname.startsWith('/admin/database')}
+              onClick={() => {
+                navigate('/admin/database');
+                setMobileOpen(false);
+              }}
+            >
+              <ListItemIcon><StorageIcon /></ListItemIcon>
+              <ListItemText primary="Gestión BBDD" />
+            </ListItemButton>
+          </>
+        )}
       </List>
     </Box>
   );

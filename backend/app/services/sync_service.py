@@ -89,9 +89,7 @@ async def create_sync_job(db: AsyncSession, data: SyncJobCreate) -> SyncJob:
     next_run = _compute_next_run(data.cron_expression) if data.cron_expression else None
 
     job = SyncJob(
-        channel_id=channel.id,
-        channel_code=channel.code,
-        channel_name=channel.name,
+        channel=channel.code,
         connection_type=connection_type,
         connection_config=connection_config,
         status="queued",
@@ -126,7 +124,7 @@ async def list_sync_jobs(
 ) -> PaginatedResponse[SyncJobRead]:
     query = select(SyncJob)
     if channel:
-        query = query.where(SyncJob.channel_id == channel)
+        query = query.where(SyncJob.channel == channel)
     if status:
         query = query.where(SyncJob.status == status)
 
@@ -161,6 +159,18 @@ async def update_schedule(db: AsyncSession, job_id: str, cron_expression: str | 
     return job
 
 
+async def delete_sync_job(db: AsyncSession, job_id: str) -> None:
+    """Elimina un trabajo de sincronización."""
+    from fastapi import HTTPException
+
+    result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Sync job not found")
+
+    await db.delete(job)
+
+
 # ---------------------------------------------------------------------------
 # Run job (with concurrency limit + history recording)
 # ---------------------------------------------------------------------------
@@ -172,7 +182,7 @@ async def run_sync_job(job_id: str) -> None:
         if not job:
             return
 
-        sem = _get_channel_semaphore(job.channel_id)
+        sem = _get_channel_semaphore(job.channel)
 
         async with sem:
             job.status = "running"
@@ -191,7 +201,7 @@ async def run_sync_job(job_id: str) -> None:
                 for detail in conn_result.product_details:
                     history = ProductSyncHistory(
                         sku=detail.sku,
-                        channel=job.channel_code,
+                        channel=job.channel,
                         job_id=str(job.id),
                         status=detail.status,
                         detail={},

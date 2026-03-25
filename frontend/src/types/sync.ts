@@ -7,9 +7,7 @@ export interface SyncJobFilters {
 
 export interface SyncJob {
   id: string;
-  channel_id: string;
-  channel_code: string;
-  channel_name: string;
+  channel: string;  // Channel code (e.g., "b2c", "amazon")
   connection_type: string | null;
   connection_config: Record<string, unknown>;
   status: string;

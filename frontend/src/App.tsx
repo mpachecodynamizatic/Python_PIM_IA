@@ -17,6 +17,10 @@ import QualityRulesAdmin from './pages/Quality/QualityRulesAdmin';
 import BrandManager from './pages/Brands/BrandManager';
 import SupplierManager from './pages/Suppliers/SupplierManager';
 import ChannelManager from './pages/Channels/ChannelManager';
+import UserManager from './pages/Admin/UserManager';
+import RoleList from './pages/Admin/RoleList';
+import RoleManager from './pages/Admin/RoleManager';
+import DatabaseManager from './pages/Admin/DatabaseManager';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,6 +55,10 @@ export default function App() {
               <Route path="/suppliers" element={<SupplierManager />} />
               <Route path="/channels" element={<ChannelManager />} />
               <Route path="/sync" element={<SyncDashboard />} />
+              <Route path="/admin/users" element={<UserManager />} />
+              <Route path="/admin/roles" element={<RoleList />} />
+              <Route path="/admin/permissions" element={<RoleManager />} />
+              <Route path="/admin/database" element={<DatabaseManager />} />
             </Route>
           </Routes>
         </BrowserRouter>
