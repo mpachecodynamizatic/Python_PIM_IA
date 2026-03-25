@@ -1,7 +1,10 @@
 import axios from 'axios';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-export const API_ORIGIN = new URL(API_BASE).origin;
+// Handle both absolute URLs (http://...) and relative URLs (/api/v1)
+export const API_ORIGIN = API_BASE.startsWith('http')
+  ? new URL(API_BASE).origin
+  : window.location.origin;
 
 const client = axios.create({
   baseURL: API_BASE,
