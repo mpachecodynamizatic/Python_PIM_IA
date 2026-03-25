@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -13,12 +14,13 @@ import {
   Paper,
   Typography,
 } from '@mui/material';
-import { DataObject, Delete, DeleteForever } from '@mui/icons-material';
+import { CloudDownload, DataObject, Delete, DeleteForever, Settings } from '@mui/icons-material';
 import { useMutation } from '@tanstack/react-query';
-import { purgeAllData, purgeProductsData, seedSampleData } from '../../api/database';
+import { importFromExternalPim, purgeAllData, purgeProductsData, seedSampleData } from '../../api/database';
 import type { DatabaseOperationResult } from '../../types/database';
 
 export default function DatabaseManager() {
+  const navigate = useNavigate();
   const [purgeAllOpen, setPurgeAllOpen] = useState(false);
   const [purgeAllConfirm, setPurgeAllConfirm] = useState(false);
   const [purgeProductsOpen, setPurgeProductsOpen] = useState(false);
@@ -64,7 +66,19 @@ export default function DatabaseManager() {
     },
   });
 
-  const isPending = purgeAllMutation.isPending || purgeProductsMutation.isPending || seedMutation.isPending;
+  const importPimMutation = useMutation({
+    mutationFn: importFromExternalPim,
+    onSuccess: (data) => {
+      setResult(data);
+      setError('');
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(msg || 'Error al importar datos desde PIM externo');
+    },
+  });
+
+  const isPending = purgeAllMutation.isPending || purgeProductsMutation.isPending || seedMutation.isPending || importPimMutation.isPending;
 
   return (
     <Box>
@@ -170,6 +184,59 @@ export default function DatabaseManager() {
                 disabled={isPending}
               >
                 Generar Datos
+              </Button>
+            </Box>
+          </Box>
+        </Paper>
+
+        {/* Card 4: Importar desde PIM Externo */}
+        <Paper sx={{ p: 3 }}>
+          <Box display="flex" alignItems="flex-start" gap={2}>
+            <CloudDownload color="info" sx={{ fontSize: 40, mt: 0.5 }} />
+            <Box flex={1}>
+              <Typography variant="h6" gutterBottom>
+                Importar desde PIM Externo
+              </Typography>
+              <Typography variant="body2" color="text.secondary" paragraph>
+                Conecta con el PIM externo y recupera productos activos. Importa productos con sus
+                categorías y marcas, filtrando por estados activos (ACTIVA, PROXIMAMENTE, FIN EXISTENCIAS)
+                y marcas permitidas (AS, SV, NL, HY). Requiere configuración de variables de entorno
+                (PIM_BASE_URL, PIM_MAIL, PIM_PASSWORD).
+              </Typography>
+              <Button
+                variant="contained"
+                color="info"
+                onClick={() => importPimMutation.mutate()}
+                disabled={isPending}
+                startIcon={<CloudDownload />}
+              >
+                Importar desde PIM
+              </Button>
+            </Box>
+          </Box>
+        </Paper>
+
+        {/* Card 5: Configurar Mapeo de Campos PIM */}
+        <Paper sx={{ p: 3 }}>
+          <Box display="flex" alignItems="flex-start" gap={2}>
+            <Settings color="primary" sx={{ fontSize: 40, mt: 0.5 }} />
+            <Box flex={1}>
+              <Typography variant="h6" gutterBottom>
+                Configurar Mapeo de Campos PIM
+              </Typography>
+              <Typography variant="body2" color="text.secondary" paragraph>
+                Configure cómo se mapean los campos del PIM externo a los campos del modelo interno.
+                Defina transformaciones personalizadas, valores por defecto y reglas de validación para
+                cada recurso (productos, categorías, marcas, etc.). Permite introspeccionar la API externa
+                para descubrir campos disponibles automáticamente.
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => navigate('/admin/pim-mapping')}
+                startIcon={<Settings />}
+              >
+                Configurar Mapeo
               </Button>
             </Box>
           </Box>

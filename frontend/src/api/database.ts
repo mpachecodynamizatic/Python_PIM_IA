@@ -15,3 +15,8 @@ export async function seedSampleData(): Promise<DatabaseOperationResult> {
   const { data } = await client.post('/database/seed');
   return data;
 }
+
+export async function importFromExternalPim(): Promise<DatabaseOperationResult> {
+  const { data } = await client.post('/database/import-from-pim');
+  return data;
+}

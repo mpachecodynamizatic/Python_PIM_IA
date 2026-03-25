@@ -21,6 +21,7 @@ import UserManager from './pages/Admin/UserManager';
 import RoleList from './pages/Admin/RoleList';
 import RoleManager from './pages/Admin/RoleManager';
 import DatabaseManager from './pages/Admin/DatabaseManager';
+import PimMappingManager from './pages/Admin/PimMappingManager';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,6 +60,7 @@ export default function App() {
               <Route path="/admin/roles" element={<RoleList />} />
               <Route path="/admin/permissions" element={<RoleManager />} />
               <Route path="/admin/database" element={<DatabaseManager />} />
+              <Route path="/admin/pim-mapping" element={<PimMappingManager />} />
             </Route>
           </Routes>
         </BrowserRouter>

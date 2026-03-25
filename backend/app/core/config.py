@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "admin@pim.local"
     ADMIN_PASSWORD: str = "admin"
 
+    # External PIM Connection
+    PIM_BASE_URL: str = "https://pim.gruposvan.com:7005"
+    PIM_MAIL: str | None = None
+    PIM_PASSWORD: str | None = None
+    PIM_SSL_VERIFY: str = "true"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

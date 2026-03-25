@@ -1,0 +1,96 @@
+import client from './client';
+
+export interface PimFieldMapping {
+  source_field: string;
+  target_field: string;
+  transform?: string;
+  required: boolean;
+  default_value?: string;
+  fk_config?: Record<string, any>;
+}
+
+export interface PimResourceMapping {
+  id: string;
+  resource: string;
+  is_active: boolean;
+  mappings: PimFieldMapping[];
+  defaults: Record<string, any>;
+  transform_config: Record<string, any>;
+  created_by: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExternalPimFieldSchema {
+  field_path: string;
+  sample_value?: string;
+  data_type: string;
+  is_nullable: boolean;
+}
+
+export interface ResourceFieldSchema {
+  field_path: string;
+  label: string;
+  data_type: string;
+  is_required: boolean;
+  is_readonly: boolean;
+  fk_constraint?: Record<string, any>;
+  choices?: string[];
+}
+
+export const listAvailableResources = async (): Promise<string[]> => {
+  const { data } = await client.get('/pim-mappings/resources');
+  return data;
+};
+
+export const introspectExternalFields = async (
+  resource: string
+): Promise<ExternalPimFieldSchema[]> => {
+  const { data } = await client.get(`/pim-mappings/resources/${resource}/external-fields`);
+  return data;
+};
+
+export const getInternalFields = async (
+  resource: string
+): Promise<ResourceFieldSchema[]> => {
+  const { data } = await client.get(`/pim-mappings/resources/${resource}/internal-fields`);
+  return data;
+};
+
+export const getMappingByResource = async (
+  resource: string
+): Promise<PimResourceMapping | null> => {
+  const { data } = await client.get(`/pim-mappings/${resource}`);
+  return data;
+};
+
+export const createMapping = async (payload: {
+  resource: string;
+  is_active: boolean;
+  mappings: PimFieldMapping[];
+  defaults: Record<string, any>;
+  transform_config: Record<string, any>;
+  notes?: string;
+}): Promise<PimResourceMapping> => {
+  const { data } = await client.post('/pim-mappings', payload);
+  return data;
+};
+
+export const updateMapping = async (
+  resource: string,
+  payload: {
+    is_active?: boolean;
+    mappings?: PimFieldMapping[];
+    defaults?: Record<string, any>;
+    transform_config?: Record<string, any>;
+    notes?: string;
+  }
+): Promise<PimResourceMapping> => {
+  const { data } = await client.patch(`/pim-mappings/${resource}`, payload);
+  return data;
+};
+
+export const deleteMapping = async (resource: string): Promise<void> => {
+  await client.delete(`/pim-mappings/${resource}`);
+};

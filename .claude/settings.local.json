@@ -37,7 +37,9 @@
       "Bash(grep:*)",
       "Bash(xargs:*)",
       "Bash(timeout 10 npm run dev:*)",
-      "Bash(sqlite3:*)"
+      "Bash(sqlite3:*)",
+      "Bash(test:*)",
+      "Bash(.venv/Scripts/pip install:*)"
     ]
   }
 }
