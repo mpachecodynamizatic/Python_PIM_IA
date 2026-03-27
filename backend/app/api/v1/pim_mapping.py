@@ -1,8 +1,9 @@
-"""API endpoints para configuración de mapeo de campos PIM."""
+"""API endpoints para configuración de mapeo de campos desde MySQL."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_roles
 from app.models.user import User
@@ -13,22 +14,23 @@ from app.schemas.pim_mapping import (
     PimResourceMappingUpdate,
     ExternalPimFieldSchema,
     ResourceFieldSchema,
+    MySQLTableInfo,
+    MySQLColumnInfo,
+    MySQLConnectionStatus,
+    ProposeMappingRequest,
 )
-from app.services import pim_mapping_service
+from app.services import pim_mapping_service, mysql_service
 
 router = APIRouter(prefix="/pim-mappings", tags=["pim-mapping"])
 
+
+# ── Recursos internos disponibles ──────────────────────────────────────────────
 
 @router.get("/resources", response_model=list[str])
 async def list_available_resources(
     _user: User = Depends(require_roles("admin")),
 ):
-    """
-    Lista todos los recursos que pueden ser mapeados.
-
-    Retorna lista de identificadores de recursos como "products", "categories", "brands", etc.
-    Solo admin puede acceder a esta funcionalidad.
-    """
+    """Lista todos los recursos internos que pueden ser mapeados desde MySQL."""
     return [
         "products",
         "categories",
@@ -48,64 +50,94 @@ async def list_available_resources(
     ]
 
 
-@router.get("/resources/{resource}/external-fields", response_model=list[ExternalPimFieldSchema])
-async def introspect_external_pim_fields(
-    resource: str,
-    db: AsyncSession = Depends(get_db),
-    _user: User = Depends(require_roles("admin")),
-):
-    """
-    Introspecciona la API del PIM externo para descubrir campos disponibles.
-
-    Se conecta al PIM externo, obtiene un item de ejemplo y analiza su estructura
-    para identificar todos los campos disponibles con sus tipos y valores de muestra.
-
-    Args:
-        resource: Tipo de recurso a introspeccionar (products, categories, etc.)
-
-    Returns:
-        Lista de campos externos con metadata
-    """
-    try:
-        return await pim_mapping_service.introspect_external_fields(resource, db)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
 @router.get("/resources/{resource}/internal-fields", response_model=list[ResourceFieldSchema])
 async def get_internal_model_fields(
     resource: str,
     _user: User = Depends(require_roles("admin")),
 ):
-    """
-    Obtiene metadata de los campos del modelo interno.
-
-    Retorna información sobre los campos del modelo interno incluyendo tipo,
-    si es requerido, restricciones FK, opciones de enum, etc.
-
-    Args:
-        resource: Tipo de recurso (products, categories, etc.)
-
-    Returns:
-        Lista de campos internos con metadata
-    """
+    """Obtiene metadata de los campos del modelo interno para un recurso."""
     try:
         return await pim_mapping_service.get_internal_fields_metadata(resource)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
+# ── Endpoints MySQL ────────────────────────────────────────────────────────────
+
+@router.get("/mysql/status", response_model=MySQLConnectionStatus)
+async def test_mysql_connection(
+    _user: User = Depends(require_roles("admin")),
+):
+    """
+    Comprueba la conexión a la base de datos MySQL configurada en el servidor.
+    Usa las variables MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE del .env.
+    """
+    result = await mysql_service.test_connection(
+        settings.MYSQL_HOST, settings.MYSQL_PORT,
+        settings.MYSQL_USER, settings.MYSQL_PASSWORD,
+        settings.MYSQL_DATABASE,
+    )
+    return MySQLConnectionStatus(**result)
+
+
+@router.get("/mysql/tables", response_model=list[MySQLTableInfo])
+async def list_mysql_tables(
+    _user: User = Depends(require_roles("admin")),
+):
+    """Lista todas las tablas de la base de datos MySQL configurada en el servidor."""
+    try:
+        tables = await mysql_service.list_tables(
+            settings.MYSQL_HOST, settings.MYSQL_PORT,
+            settings.MYSQL_USER, settings.MYSQL_PASSWORD,
+            settings.MYSQL_DATABASE,
+        )
+        return [MySQLTableInfo(**t) for t in tables]
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"No se pudo conectar a MySQL: {e}")
+
+
+@router.get("/mysql/tables/{table_name}/columns", response_model=list[ExternalPimFieldSchema])
+async def get_mysql_table_columns(
+    table_name: str,
+    _user: User = Depends(require_roles("admin")),
+):
+    """
+    Obtiene las columnas de una tabla MySQL con tipo y valor de muestra.
+    Úsalo para explorar el esquema antes de configurar el mapeo.
+    """
+    try:
+        return await pim_mapping_service.introspect_mysql_table_fields(table_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/mysql/propose", response_model=list[dict])
+async def propose_mysql_field_mapping(
+    body: ProposeMappingRequest,
+    _user: User = Depends(require_roles("admin")),
+):
+    """
+    Propone un mapeo automático entre las columnas de la tabla MySQL y el recurso interno.
+
+    Analiza los nombres de columnas y aplica heurísticas (diccionario español→campo interno)
+    para sugerir correspondencias con las transformaciones adecuadas.
+
+    El campo '__mysql_table' se añade automáticamente a transform_config al guardar el mapeo.
+    """
+    try:
+        return await pim_mapping_service.propose_mysql_mapping(body.table, body.resource)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── CRUD de configuraciones de mapeo ──────────────────────────────────────────
+
 @router.get("", response_model=list[PimResourceMappingRead])
 async def list_all_mappings(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_roles("admin")),
 ):
-    """
-    Lista todas las configuraciones de mapeo existentes.
-
-    Returns:
-        Lista de todas las configuraciones de mapeo ordenadas por recurso
-    """
+    """Lista todas las configuraciones de mapeo existentes."""
     result = await db.execute(
         select(PimResourceMapping).order_by(PimResourceMapping.resource)
     )
@@ -118,15 +150,7 @@ async def get_mapping_by_resource(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_roles("admin")),
 ):
-    """
-    Obtiene la configuración de mapeo para un recurso específico.
-
-    Args:
-        resource: Tipo de recurso (products, categories, etc.)
-
-    Returns:
-        Configuración de mapeo o None si no existe
-    """
+    """Obtiene la configuración de mapeo para un recurso específico."""
     result = await db.execute(
         select(PimResourceMapping).where(PimResourceMapping.resource == resource)
     )
@@ -139,32 +163,23 @@ async def create_mapping(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_roles("admin")),
 ):
+    """Crea una nueva configuración de mapeo para un recurso.
+    
+    Incluye '__mysql_table' en transform_config para indicar la tabla MySQL de origen.
     """
-    Crea una nueva configuración de mapeo para un recurso.
-
-    Args:
-        body: Datos de la configuración de mapeo
-
-    Returns:
-        Configuración de mapeo creada
-
-    Raises:
-        409: Si ya existe una configuración para este recurso
-    """
-    # Verificar si ya existe
     existing = await db.execute(
         select(PimResourceMapping).where(PimResourceMapping.resource == body.resource)
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(409, f"Ya existe una configuración de mapeo para el recurso '{body.resource}'")
+        raise HTTPException(409, f"Ya existe una configuración de mapeo para '{body.resource}'")
 
-    # Crear nueva configuración
     mapping = PimResourceMapping(
         resource=body.resource,
         is_active=body.is_active,
         mappings=[m.model_dump() for m in body.mappings],
         defaults=body.defaults,
         transform_config=body.transform_config,
+        where_clause=body.where_clause.strip() if body.where_clause else None,
         created_by=str(user.id),
         notes=body.notes,
     )
@@ -182,27 +197,14 @@ async def update_mapping(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_roles("admin")),
 ):
-    """
-    Actualiza una configuración de mapeo existente.
-
-    Args:
-        resource: Tipo de recurso
-        body: Datos actualizados (solo los campos proporcionados serán actualizados)
-
-    Returns:
-        Configuración de mapeo actualizada
-
-    Raises:
-        404: Si no existe configuración para este recurso
-    """
+    """Actualiza una configuración de mapeo existente."""
     result = await db.execute(
         select(PimResourceMapping).where(PimResourceMapping.resource == resource)
     )
     mapping = result.scalar_one_or_none()
     if not mapping:
-        raise HTTPException(404, f"No se encontró configuración de mapeo para el recurso '{resource}'")
+        raise HTTPException(404, f"No se encontró configuración de mapeo para '{resource}'")
 
-    # Actualizar campos proporcionados
     if body.is_active is not None:
         mapping.is_active = body.is_active
     if body.mappings is not None:
@@ -211,6 +213,9 @@ async def update_mapping(
         mapping.defaults = body.defaults
     if body.transform_config is not None:
         mapping.transform_config = body.transform_config
+    if body.where_clause is not None:
+        # Convertir string vacío a None
+        mapping.where_clause = body.where_clause.strip() if body.where_clause else None
     if body.notes is not None:
         mapping.notes = body.notes
 
@@ -225,52 +230,44 @@ async def delete_mapping(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_roles("admin")),
 ):
-    """
-    Elimina una configuración de mapeo.
-
-    Args:
-        resource: Tipo de recurso
-
-    Raises:
-        404: Si no existe configuración para este recurso
-    """
+    """Elimina una configuración de mapeo."""
     result = await db.execute(
         select(PimResourceMapping).where(PimResourceMapping.resource == resource)
     )
     mapping = result.scalar_one_or_none()
     if not mapping:
-        raise HTTPException(404, f"No se encontró configuración de mapeo para el recurso '{resource}'")
+        raise HTTPException(404, f"No se encontró configuración de mapeo para '{resource}'")
 
     await db.delete(mapping)
     await db.commit()
 
 
+# ── Importación desde MySQL ────────────────────────────────────────────────────
+
 @router.post("/{resource}/import")
-async def import_resource(
+async def import_resource_from_mysql(
     resource: str,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_roles("admin")),
 ):
     """
-    Importa un recurso específico desde el PIM externo usando su mapeo configurado.
+    Importa un recurso desde MySQL usando el mapeo configurado.
 
-    Args:
-        resource: Tipo de recurso (products, brands, categories, etc.)
+    Requiere:
+    - Una configuración de mapeo activa para el recurso.
+    - El campo '__mysql_table' en transform_config con el nombre de la tabla MySQL de origen.
 
     Returns:
-        Estadísticas de importación (created, updated, skipped, errors)
-
-    Raises:
-        400: Si no hay mapeo activo o hay error de conexión
-        404: Si el recurso no es soportado
+        Estadísticas: created, updated, skipped, errors
     """
     try:
-        counts = await pim_mapping_service.import_resource_from_external_pim(db, resource)
+        counts = await pim_mapping_service.import_resource_from_mysql(db, resource)
         return {
             "message": f"Importación de '{resource}' completada",
-            "stats": counts
+            "stats": counts,
         }
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
-        raise HTTPException(500, f"Error inesperado durante la importación: {str(e)}")
+        raise HTTPException(500, f"Error inesperado durante la importación: {e}")
+

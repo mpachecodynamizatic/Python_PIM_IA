@@ -38,3 +38,5 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+backup_bd_pim_marce.sql

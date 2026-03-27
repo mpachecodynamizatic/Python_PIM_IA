@@ -34,6 +34,9 @@ class PimResourceMapping(UUIDMixin, Base):
     # Estructura: {"status_map": {"ACTIVA": "approved"}, "brand_code_map": {"Aspes": "AS"}}
     transform_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
 
+    # Cláusula WHERE para filtrar datos origen (ej: "estado_referencia = 'ACTIVO'")
+    where_clause: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Usuario que creó la configuración
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
 

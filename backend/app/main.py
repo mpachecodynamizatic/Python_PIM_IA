@@ -38,6 +38,7 @@ from app.models import (  # noqa: F401
     product_channel,
     supplier,
     external_taxonomy,
+    pim_field_mapping,
 )
 
 UPLOAD_DIR = Path(__file__).parent.parent / "uploads"

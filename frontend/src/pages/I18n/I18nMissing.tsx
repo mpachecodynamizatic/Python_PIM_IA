@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -95,6 +95,7 @@ function TranslateDialog({ open, product, locale, onClose, onSaved }: TranslateD
 export default function I18nMissing() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [locale, setLocale] = useState('es');
   const [page, setPage] = useState(1);
   const [translateTarget, setTranslateTarget] = useState<MissingTranslation | null>(null);
@@ -105,6 +106,15 @@ export default function I18nMissing() {
     queryKey: ['locales'],
     queryFn: listLocales,
   });
+
+  // Aplicar filtro de locale desde URL
+  useEffect(() => {
+    const localeParam = searchParams.get('locale');
+    if (localeParam && localeParam !== locale) {
+      setLocale(localeParam);
+      setPage(1);
+    }
+  }, [searchParams]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['missing-translations', locale, page],

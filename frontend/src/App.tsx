@@ -22,6 +22,7 @@ import RoleList from './pages/Admin/RoleList';
 import RoleManager from './pages/Admin/RoleManager';
 import DatabaseManager from './pages/Admin/DatabaseManager';
 import PimMappingManager from './pages/Admin/PimMappingManager';
+import Documentation from './pages/Documentation/Documentation';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,6 +57,7 @@ export default function App() {
               <Route path="/suppliers" element={<SupplierManager />} />
               <Route path="/channels" element={<ChannelManager />} />
               <Route path="/sync" element={<SyncDashboard />} />
+              <Route path="/documentation" element={<Documentation />} />
               <Route path="/admin/users" element={<UserManager />} />
               <Route path="/admin/roles" element={<RoleList />} />
               <Route path="/admin/permissions" element={<RoleManager />} />

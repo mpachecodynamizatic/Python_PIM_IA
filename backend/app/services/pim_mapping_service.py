@@ -1,196 +1,240 @@
-"""Servicio para mapeo de campos del PIM externo."""
+"""Servicio para mapeo de campos desde MySQL."""
 import logging
 import re
-import requests
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.export.configs import get_config
-from app.schemas.pim_mapping import ExternalPimFieldSchema, ResourceFieldSchema
+from app.schemas.pim_mapping import ExternalPimFieldSchema, ResourceFieldSchema, PimFieldMapping
 from app.models.pim_field_mapping import PimResourceMapping
 from app.models.category import Category
 from app.models.brand import Brand
 from app.models.supplier import Supplier
 from app.models.channel import Channel
+from app.services import mysql_service
 
 logger = logging.getLogger(__name__)
 
 
+# ── Diccionario de sugerencias de mapeo (nombre columna MySQL → campo interno) ─
+# Clave: nombre de columna MySQL en minúsculas
+# Valor: field_path interno (dot notation) o None (sin sugerencia)
+FIELD_NAME_MAP: dict[str, str | None] = {
+    # Identificadores de producto
+    "sku":                    "sku",
+    "referencia":             "sku",
+    "codigo":                 "sku",
+    "ref":                    "sku",
+    "articulo":               "sku",
+    "codigo_articulo":        "sku",
+    "nombre":                 "name",
+    "titulo":                 "name",
+    "name":                   "name",
+    "title":                  "name",
+    # Descripción
+    "descripcion":            "attributes.description",
+    "descripcion_larga":      "attributes.description",
+    "descripcion_corta":      "attributes.short_description",
+    "description":            "attributes.description",
+    # Marca
+    "marca":                  "brand",
+    "brand":                  "brand",
+    # Categoría
+    "categoria":              "category_id",
+    "categorias":             "category_id",
+    "category":               "category_id",
+    # Estado
+    "estado":                 "status",
+    "estado_referencia":      "status",
+    "activo":                 "status",
+    "activo_sn":              "status",
+    "activosn":               "status",
+    "status":                 "status",
+    # Slug / código URL
+    "slug":                   "slug",
+    "codigo_url":             "slug",
+    # EAN / GTIN
+    "ean":                    "attributes.ean",
+    "ean13":                  "attributes.ean",
+    "ean14":                  "attributes.ean",
+    "gtin":                   "attributes.ean",
+    "codigo_barras":          "attributes.ean",
+    # SEO
+    "palabras_clave":         "seo.keywords",
+    "keywords":               "seo.keywords",
+    "meta_descripcion":       "seo.description",
+    "meta_titulo":            "seo.title",
+    # Dimensiones y peso
+    "peso":                   "attributes.weight",
+    "peso_neto":              "attributes.weight",
+    "ancho":                  "attributes.width",
+    "alto":                   "attributes.height",
+    "fondo":                  "attributes.depth",
+    "volumen":                "attributes.volume",
+    "largo":                  "attributes.length",
+    # Marketplace
+    "activoenmarketplace":    "attributes.active_marketplace",
+    "referencia_agrupacion":  "attributes.group_reference",
+    # Familia / proveedor
+    "familia":                "family_id",
+    "familia_id":             "family_id",
+    "proveedor":              "supplier_id",
+    "proveedor_id":           "supplier_id",
+    # Campos para recurso "brands"
+    "codigo_marca":           "code",
+    "marca_codigo":           "code",
+    # Campos para recurso "categories"
+    "codigo_categoria":       "code",
+    "tagaecoc":               "attributes.aecoc_tag",
+    "codigoaecoc":            "attributes.aecoc_code",
+    # Campos que se omiten (sin mapeo útil)
+    "id":                     None,
+    "empresa_id":             None,
+    "empresaid":              None,
+    "imagen":                 None,
+    "url_imagen":             None,
+    "imagen_url":             None,
+    "precio":                 None,
+    "pvp":                    None,
+    "categoria_padre":        None,
+}
+
+MYSQL_TYPE_TO_INTERNAL: dict[str, str] = {
+    "int": "int", "bigint": "int", "smallint": "int",
+    "tinyint": "int", "mediumint": "int",
+    "float": "float", "double": "float", "decimal": "float", "numeric": "float",
+    "varchar": "str", "char": "str", "text": "str", "longtext": "str",
+    "mediumtext": "str", "tinytext": "str",
+    "boolean": "bool", "bool": "bool", "bit": "bool",
+    "date": "datetime", "datetime": "datetime", "timestamp": "datetime",
+    "json": "json",
+}
+
+
 def _generate_slug(text: str) -> str:
-    """
-    Generate a URL-friendly slug from text.
-
-    Args:
-        text: Text to convert to slug
-
-    Returns:
-        Slugified text (lowercase, alphanumeric + hyphens)
-    """
-    # Convert to lowercase
     slug = text.lower()
-    # Replace spaces and underscores with hyphens
     slug = re.sub(r'[\s_]+', '-', slug)
-    # Remove non-alphanumeric characters except hyphens
     slug = re.sub(r'[^a-z0-9-]', '', slug)
-    # Remove multiple consecutive hyphens
     slug = re.sub(r'-+', '-', slug)
-    # Strip hyphens from start and end
-    slug = slug.strip('-')
-    return slug
+    return slug.strip('-')
 
 
-def _filter_fields_by_resource(fields: list[ExternalPimFieldSchema], resource: str) -> list[ExternalPimFieldSchema]:
+def _mysql_type_to_internal(mysql_data_type: str) -> str:
+    return MYSQL_TYPE_TO_INTERNAL.get(mysql_data_type.lower(), "str")
+
+
+# ── Funciones MySQL ────────────────────────────────────────────────────────────
+
+async def introspect_mysql_table_fields(table_name: str) -> list[ExternalPimFieldSchema]:
     """
-    Filtra campos según el recurso para mostrar solo los relevantes.
-
-    Args:
-        fields: Lista completa de campos introspectados
-        resource: Tipo de recurso (products, brands, categories, etc.)
-
-    Returns:
-        Lista filtrada de campos relevantes para el recurso
+    Obtiene las columnas de una tabla MySQL como ExternalPimFieldSchema.
+    Incluye un valor de muestra (primera fila) para cada columna.
     """
-    # Mapeo de recursos a patrones de campos relevantes
-    resource_patterns = {
-        "brands": ["marca", "brand"],
-        "categories": ["categoria", "category"],
-        "suppliers": ["proveedor", "supplier", "fabricante"],
-        "channels": ["canal", "channel", "tienda", "store"],
-    }
-
-    # Para productos, mostrar todos los campos
-    if resource == "products":
-        return fields
-
-    # Para otros recursos, filtrar por patrones relevantes
-    patterns = resource_patterns.get(resource, [])
-    if not patterns:
-        return fields
-
-    # Filtrar campos que coincidan con los patrones
-    relevant_fields = []
-    other_fields = []
-
-    for field in fields:
-        field_lower = field.field_path.lower()
-        is_relevant = any(pattern in field_lower for pattern in patterns)
-
-        if is_relevant:
-            relevant_fields.append(field)
-        else:
-            other_fields.append(field)
-
-    # Retornar primero los campos relevantes, luego los demás
-    # Esto permite ver los campos importantes al principio
-    return relevant_fields + other_fields
-
-
-async def introspect_external_fields(resource: str, db: AsyncSession) -> list[ExternalPimFieldSchema]:
-    """
-    Conecta a la API externa del PIM y analiza la estructura de respuesta
-    para descubrir los campos disponibles.
-
-    Args:
-        resource: Tipo de recurso (products, categories, brands, etc.)
-        db: Sesión de base de datos
-
-    Returns:
-        Lista de campos externos con sample values y tipos
-
-    Raises:
-        ValueError: Si la conexión al PIM falla o el recurso no es válido
-    """
-    # Mapeo de recursos a endpoints de la API externa
-    # Para recursos que no tienen endpoint propio (brands, categories),
-    # usamos /B2bProductos ya que contiene esa información
-    endpoint_map = {
-        "products": "/B2bProductos",
-        "categories": "/B2bProductos",  # Usa productos (tienen campo 'categorias')
-        "brands": "/B2bProductos",  # Usa productos (tienen campo 'marca')
-        "suppliers": "/B2bProductos",
-        "channels": "/B2bProductos",
-    }
-
-    endpoint = endpoint_map.get(resource, "/B2bProductos")
-
-    ssl_verify = settings.PIM_SSL_VERIFY.lower() != 'false'
+    try:
+        columns = await mysql_service.get_table_columns(
+            settings.MYSQL_HOST, settings.MYSQL_PORT,
+            settings.MYSQL_USER, settings.MYSQL_PASSWORD,
+            settings.MYSQL_DATABASE, table_name,
+        )
+    except Exception as e:
+        raise ValueError(f"Error al acceder a la tabla MySQL '{table_name}': {e}")
 
     try:
-        # Autenticación
-        login_url = f"{settings.PIM_BASE_URL}/auth/login"
-        auth_payload = {"mail": settings.PIM_MAIL, "password": settings.PIM_PASSWORD}
+        samples = await mysql_service.get_sample_data(
+            settings.MYSQL_HOST, settings.MYSQL_PORT,
+            settings.MYSQL_USER, settings.MYSQL_PASSWORD,
+            settings.MYSQL_DATABASE, table_name, limit=1,
+        )
+        sample_row = samples[0] if samples else {}
+    except Exception:
+        sample_row = {}
 
-        login_resp = requests.post(login_url, json=auth_payload, verify=ssl_verify, timeout=30)
-        login_resp.raise_for_status()
-        token_data = login_resp.json()
+    fields = []
+    for col in columns:
+        col_name = col["column_name"]
+        raw_sample = sample_row.get(col_name)
+        fields.append(ExternalPimFieldSchema(
+            field_path=col_name,
+            sample_value=str(raw_sample)[:100] if raw_sample is not None else None,
+            data_type=_mysql_type_to_internal(col["data_type"]),
+            is_nullable=col["is_nullable"] == "YES",
+        ))
 
-        # Obtener token
-        token = token_data.get('token') or token_data
+    return fields
 
-        # Obtener datos (limitado a 1 item para introspección)
-        get_url = f"{settings.PIM_BASE_URL}{endpoint}"
-        headers = {"accept": "application/json", "Authorization": f"Bearer {token}"}
 
-        resp = requests.get(get_url, headers=headers, verify=ssl_verify, timeout=60)
-        resp.raise_for_status()
+async def propose_mysql_mapping(table_name: str, resource: str) -> list[dict]:
+    """
+    Propone un mapeo automático entre las columnas de la tabla MySQL y los campos internos.
 
-        items = resp.json()
-        if not items:
-            return []
+    Analiza los nombres de columnas de la tabla MySQL y aplica un diccionario de
+    sugerencias (FIELD_NAME_MAP) para proponer el mapeo con las transformaciones
+    adecuadas (status_map, fk_resolve, etc.).
 
-        # Introspeccionar primer item
-        sample = items[0] if isinstance(items, list) else items
-        fields = []
-
-        def introspect_dict(obj, prefix=""):
-            """Recorre recursivamente el objeto JSON y extrae campos."""
-            if not isinstance(obj, dict):
-                return
-
-            for key, value in obj.items():
-                field_path = f"{prefix}.{key}" if prefix else key
-                is_nullable = value is None
-
-                if isinstance(value, dict):
-                    # Recursivo para objetos anidados
-                    introspect_dict(value, field_path)
-                else:
-                    # Determinar tipo
-                    if value is None:
-                        data_type = "null"
-                    elif isinstance(value, bool):
-                        data_type = "bool"
-                    elif isinstance(value, int):
-                        data_type = "int"
-                    elif isinstance(value, float):
-                        data_type = "float"
-                    elif isinstance(value, str):
-                        data_type = "str"
-                    elif isinstance(value, list):
-                        data_type = "list"
-                    else:
-                        data_type = type(value).__name__
-
-                    fields.append(ExternalPimFieldSchema(
-                        field_path=field_path,
-                        sample_value=str(value)[:100] if value is not None else None,
-                        data_type=data_type,
-                        is_nullable=is_nullable,
-                    ))
-
-        introspect_dict(sample)
-
-        # Filtrar campos según el recurso para mostrar solo los relevantes
-        filtered_fields = _filter_fields_by_resource(fields, resource)
-        return filtered_fields
-
-    except requests.HTTPError as e:
-        logger.error(f"HTTP error al conectar con PIM externo: {e}")
-        raise ValueError(f"No se pudo conectar al PIM externo: {e}")
+    Returns:
+        Lista de dicts con estructura PimFieldMapping
+    """
+    try:
+        columns = await mysql_service.get_table_columns(
+            settings.MYSQL_HOST, settings.MYSQL_PORT,
+            settings.MYSQL_USER, settings.MYSQL_PASSWORD,
+            settings.MYSQL_DATABASE, table_name,
+        )
     except Exception as e:
-        logger.exception("Error inesperado al introspeccionar PIM externo")
-        raise ValueError(f"Error al introspeccionar PIM externo: {e}")
+        raise ValueError(f"Error al acceder a la tabla MySQL '{table_name}': {e}")
+
+    proposed = []
+    for col in columns:
+        col_name = col["column_name"]
+        col_lower = col_name.lower()
+
+        # Buscar en el diccionario de sugerencias
+        target = FIELD_NAME_MAP.get(col_lower)
+        if target is None:
+            continue  # Sin sugerencia → omitir
+
+        # Determinar transformación según el campo
+        transform = None
+        fk_config = None
+
+        if col_lower in ("estado", "estado_referencia", "activo", "activo_sn", "activosn"):
+            transform = "status_map"
+        elif col_lower == "marca":
+            transform = "fk_resolve"
+            fk_config = {
+                "table": "brands",
+                "lookup_by": "name",
+                "return_field": "id",
+                "auto_create": True,
+            }
+        elif col_lower in ("categoria", "categorias"):
+            transform = "fk_resolve"
+            fk_config = {
+                "table": "categories",
+                "lookup_by": "name",
+                "return_field": "id",
+                "auto_create": True,
+            }
+        elif col_lower in ("proveedor", "proveedor_id"):
+            transform = "fk_resolve"
+            fk_config = {
+                "table": "suppliers",
+                "lookup_by": "name",
+                "return_field": "id",
+                "auto_create": False,
+            }
+
+        proposed.append({
+            "source_field":  col_name,
+            "target_field":  target,
+            "transform":     transform,
+            "required":      col.get("column_key") == "PRI",
+            "default_value": None,
+            "fk_config":     fk_config,
+        })
+
+    return proposed
 
 
 async def get_internal_fields_metadata(resource: str) -> list[ResourceFieldSchema]:
@@ -448,194 +492,250 @@ def _set_nested_value(data: dict, path: str, value: any):
         current[keys[-1]] = value
 
 
-async def import_resource_from_external_pim(
+async def import_resource_from_mysql(
     db: AsyncSession,
     resource: str,
 ) -> dict[str, int]:
     """
-    Importa un recurso específico desde el PIM externo usando su mapeo configurado.
+    Importa un recurso desde MySQL usando la configuración de mapeo activa.
+
+    Lee la tabla MySQL configurada en transform_config["__mysql_table"] del mapeo activo,
+    aplica los mapeos de campo y crea/actualiza registros en la base de datos interna.
 
     Args:
-        db: Sesión de base de datos
+        db: Sesión de base de datos interna (SQLite)
         resource: Tipo de recurso (products, brands, categories, etc.)
 
     Returns:
-        Dict con contadores de importación (created, updated, skipped, errors)
+        Dict con contadores: created, updated, skipped, errors
 
     Raises:
-        ValueError: Si no hay mapeo activo o hay error de conexión
+        ValueError: Si no hay mapeo activo, tabla configurada, o error de conexión
     """
+    # Si estamos importando productos, asegurar que existe categoría por defecto
+    default_category_id = None
+    if resource == "products":
+        try:
+            default_cat_query = await db.execute(
+                select(Category).where(Category.name == "Sin Categoría")
+            )
+            default_category = default_cat_query.scalar_one_or_none()
+            if not default_category:
+                logger.info("Creando categoría por defecto 'Sin Categoría'")
+                default_category = Category(
+                    name="Sin Categoría",
+                    slug="sin-categoria",
+                    description="Productos sin categoría asignada"
+                )
+                db.add(default_category)
+                await db.flush()
+                logger.info(f"Categoría 'Sin Categoría' creada con id={default_category.id}")
+            default_category_id = default_category.id
+            logger.info(f"Usando categoría por defecto: {default_category.name} (id={default_category_id})")
+
+            if default_category_id is None:
+                raise ValueError("ERROR CRÍTICO: default_category_id es None después de crear/obtener la categoría")
+        except Exception as e:
+            logger.error(f"Error al crear/obtener categoría por defecto: {e}")
+            raise
+
     # Verificar que existe mapeo activo
     result = await db.execute(
         select(PimResourceMapping).where(
             PimResourceMapping.resource == resource,
-            PimResourceMapping.is_active == True
+            PimResourceMapping.is_active == True,
         )
     )
     mapping_config = result.scalar_one_or_none()
     if not mapping_config:
         raise ValueError(f"No hay configuración de mapeo activa para el recurso '{resource}'")
 
-    # Mapeo de recursos a modelos
-    from app.models.product import Product
+    # Leer tabla MySQL desde transform_config
+    source_table = mapping_config.transform_config.get("__mysql_table")
+    if not source_table:
+        raise ValueError(
+            f"No hay tabla MySQL configurada para '{resource}'. "
+            "Configura '__mysql_table' en el campo Transform Config."
+        )
+
+    from app.models.product import Product, ProductI18n
+    from app.models.media import MediaAsset
+    from app.models.product_logistics import ProductLogistics
+    from app.models.product_compliance import ProductCompliance
+    from app.models.product_channel import ProductChannel
+    from app.models.external_taxonomy import ExternalTaxonomy, ProductExternalTaxonomy
+    from app.models.attribute_family import AttributeFamily, AttributeDefinition
 
     model_map = {
-        "products": Product,
-        "brands": Brand,
+        "products":   Product,
+        "brands":     Brand,
         "categories": Category,
-        "suppliers": Supplier,
-        "channels": Channel,
+        "suppliers":  Supplier,
+        "channels":   Channel,
+        "product_i18n": ProductI18n,
+        "media_assets": MediaAsset,
+        "product_logistics": ProductLogistics,
+        "product_compliance": ProductCompliance,
+        "product_channels": ProductChannel,
+        "external_taxonomies": ExternalTaxonomy,
+        "product_external_taxonomies": ProductExternalTaxonomy,
+        "attribute_families": AttributeFamily,
+        "attribute_definitions": AttributeDefinition,
     }
-
     model = model_map.get(resource)
     if not model:
         raise ValueError(f"Recurso '{resource}' no soportado para importación")
 
-    # Obtener datos del PIM externo
-    endpoint = "/B2bProductos"  # Único endpoint disponible
-    ssl_verify = settings.PIM_SSL_VERIFY.lower() != 'false'
-
-    counts = {
-        'created': 0,
-        'updated': 0,
-        'skipped': 0,
-        'errors': 0,
+    # Determinar campo PK según el recurso
+    pk_fields_map = {
+        "products": "sku",
+        "product_i18n": "sku",  # También usa locale, pero sku es principal
+        "media_assets": "id",
+        "product_logistics": "sku",
+        "product_compliance": "sku",
+        "product_channels": "sku",  # También usa channel_id
+        "product_external_taxonomies": "sku",  # También usa taxonomy_id
+        "attribute_definitions": "name",  # También usa family_id
+        # Por defecto, todos los demás usan 'name'
     }
+    pk_field = pk_fields_map.get(resource, "name")
+
+    counts = {"created": 0, "updated": 0, "skipped": 0, "errors": 0}
+
+    # Leer todos los registros de MySQL (con filtro WHERE opcional)
+    where_clause = mapping_config.where_clause
+    if where_clause:
+        logger.info(f"Aplicando filtro WHERE: {where_clause}")
 
     try:
-        # Autenticación
-        login_url = f"{settings.PIM_BASE_URL}/auth/login"
-        auth_payload = {"mail": settings.PIM_MAIL, "password": settings.PIM_PASSWORD}
-
-        login_resp = requests.post(login_url, json=auth_payload, verify=ssl_verify, timeout=30)
-        login_resp.raise_for_status()
-        token_data = login_resp.json()
-        token = token_data.get('token') or token_data
-
-        # Obtener datos
-        get_url = f"{settings.PIM_BASE_URL}{endpoint}"
-        headers = {"accept": "application/json", "Authorization": f"Bearer {token}"}
-
-        resp = requests.get(get_url, headers=headers, verify=ssl_verify, timeout=60)
-        resp.raise_for_status()
-
-        items = resp.json()
-        logger.info(f"Retrieved {len(items)} items from external PIM for resource '{resource}'")
-
-        # Para recursos que no son productos, primero extraer valores únicos
-        # para evitar procesar duplicados (ej: 1000 productos con 4 marcas)
-        if resource != "products":
-            unique_values = {}  # key: valor del campo principal, value: item de ejemplo
-            pk_field = "name"  # Para brands, categories, etc. usamos 'name' como PK
-
-            for item in items:
-                try:
-                    # Aplicar mapeo para obtener el campo principal
-                    entity_data = await apply_field_mapping(db, resource, item)
-                    pk_value = entity_data.get(pk_field)
-
-                    if pk_value and pk_value not in unique_values:
-                        unique_values[pk_value] = entity_data
-                except Exception as e:
-                    logger.debug(f"Skipping item due to mapping error during deduplication: {e}")
-                    continue
-
-            logger.info(f"Found {len(unique_values)} unique {resource} from {len(items)} products")
-            # Reemplazar items con los valores únicos ya mapeados
-            items_to_process = list(unique_values.values())
-        else:
-            items_to_process = items
-
-        # Procesar cada item
-        for idx, item in enumerate(items_to_process, 1):
-            try:
-                # Si ya está mapeado (recursos no-productos), usar directamente
-                # Si no, aplicar mapeo (productos)
-                if resource != "products" and isinstance(item, dict) and 'name' in item:
-                    entity_data = item  # Ya mapeado en la fase de deduplicación
-                else:
-                    entity_data = await apply_field_mapping(db, resource, item)
-
-                # Determinar clave primaria (por defecto 'id', pero puede ser 'sku', 'name', etc.)
-                # Para products usamos 'sku', para otros recursos usamos 'name'
-                if resource == "products":
-                    pk_field = "sku"
-                    pk_value = entity_data.get("sku")
-                else:
-                    pk_field = "name"
-                    pk_value = entity_data.get("name")
-
-                # Log de progreso cada 10 items
-                if idx % 10 == 0:
-                    logger.info(f"Processing {resource} {idx}/{len(items_to_process)}: {pk_value}")
-
-                if not pk_value:
-                    logger.warning(f"Skipping item without {pk_field}: {item.get('id', 'unknown')}")
-                    counts['skipped'] += 1
-                    continue
-
-                # Auto-generar campos requeridos que no están mapeados
-                # Si el modelo tiene 'slug' y no está en entity_data, generarlo desde 'name'
-                if hasattr(model, 'slug') and 'slug' not in entity_data and 'name' in entity_data:
-                    base_slug = _generate_slug(entity_data['name'])
-                    slug = base_slug
-
-                    # Verificar si el slug ya existe y añadir sufijo si es necesario
-                    # Límite de 100 intentos para evitar loops infinitos
-                    counter = 1
-                    max_attempts = 100
-                    while counter < max_attempts:
-                        existing_slug = await db.execute(
-                            select(model).where(model.slug == slug)
-                        )
-                        if existing_slug.scalar_one_or_none() is None:
-                            break
-                        slug = f"{base_slug}-{counter}"
-                        counter += 1
-
-                    if counter >= max_attempts:
-                        logger.error(f"Could not generate unique slug for '{entity_data['name']}' after {max_attempts} attempts")
-                        counts['errors'] += 1
-                        continue
-
-                    entity_data['slug'] = slug
-
-                # Buscar si ya existe
-                query = select(model).where(getattr(model, pk_field) == pk_value)
-                existing = await db.execute(query)
-                entity = existing.scalar_one_or_none()
-
-                if entity:
-                    # Actualizar existente
-                    for key, value in entity_data.items():
-                        if key != pk_field:  # No cambiar la PK
-                            setattr(entity, key, value)
-                    counts['updated'] += 1
-                else:
-                    # Crear nuevo
-                    entity = model(**entity_data)
-                    db.add(entity)
-                    counts['created'] += 1
-
-            except ValueError as e:
-                # Error de mapeo (campo requerido faltante, FK no encontrado, etc.)
-                logger.warning(f"Skipping item due to mapping error: {e}")
-                counts['skipped'] += 1
-                continue
-            except Exception as e:
-                logger.error(f"Error processing item: {e}")
-                counts['errors'] += 1
-                continue
-
-        # Commit todos los cambios
-        await db.commit()
-
-        logger.info(f"Import of '{resource}' completed: {counts}")
-        return counts
-
-    except requests.HTTPError as e:
-        logger.error(f"HTTP error connecting to external PIM: {e}")
-        raise ValueError(f"No se pudo conectar al PIM externo: {e}")
+        items = await mysql_service.fetch_all_rows(
+            settings.MYSQL_HOST, settings.MYSQL_PORT,
+            settings.MYSQL_USER, settings.MYSQL_PASSWORD,
+            settings.MYSQL_DATABASE, source_table,
+            where_clause=where_clause,
+        )
     except Exception as e:
-        logger.exception("Unexpected error importing from external PIM")
-        raise ValueError(f"Error al importar desde PIM externo: {e}")
+        raise ValueError(f"Error al leer de MySQL '{source_table}': {e}")
+
+    logger.info(f"Leídas {len(items)} filas de MySQL '{source_table}' para recurso '{resource}' (filtradas con WHERE: {bool(where_clause)})")
+
+    for idx, item in enumerate(items, 1):
+        try:
+            entity_data = await apply_field_mapping(db, resource, item)
+            pk_value = entity_data.get(pk_field)
+
+            if idx % 50 == 0:
+                logger.info(f"Procesando {resource} {idx}/{len(items)}: {pk_value}")
+
+            if not pk_value:
+                logger.warning(f"Fila {idx} sin valor para '{pk_field}', omitida")
+                counts["skipped"] += 1
+                continue
+
+            # Auto-generar slug si el modelo lo requiere y no está mapeado
+            if hasattr(model, "slug") and "slug" not in entity_data and "name" in entity_data:
+                base_slug = _generate_slug(entity_data["name"])
+                slug = base_slug
+                counter = 1
+                while counter < 100:
+                    existing_slug = await db.execute(
+                        select(model).where(model.slug == slug)
+                    )
+                    if existing_slug.scalar_one_or_none() is None:
+                        break
+                    slug = f"{base_slug}-{counter}"
+                    counter += 1
+                entity_data["slug"] = slug
+
+            # Asignar valores por defecto para productos
+            if resource == "products":
+                logger.debug(f"Producto {pk_value}: category_id actual={entity_data.get('category_id')}, default_id={default_category_id}")
+
+                # category_id es obligatorio
+                if not entity_data.get("category_id") or entity_data.get("category_id") is None:
+                    logger.info(f"Asignando categoría por defecto a producto {pk_value} (era: {entity_data.get('category_id')})")
+                    entity_data["category_id"] = default_category_id
+                    logger.info(f"Categoría asignada: {entity_data['category_id']}")
+
+                # brand es obligatorio - si no existe, crear "Sin Marca"
+                if not entity_data.get("brand") or entity_data.get("brand") == "":
+                    logger.info(f"Brand vacío para producto {pk_value}, asignando 'Sin Marca'")
+                    entity_data["brand"] = "Sin Marca"
+
+                # status es obligatorio
+                if not entity_data.get("status"):
+                    entity_data["status"] = "draft"
+
+            # Auto-generar campos obligatorios según el recurso
+            if resource == "channels":
+                # code es obligatorio
+                if not entity_data.get("code"):
+                    name_val = entity_data.get("name", "")
+                    if name_val:
+                        code = name_val.upper().replace(" ", "").replace("-", "")[:10]
+                        entity_data["code"] = code
+                        logger.debug(f"Auto-generando code '{code}' para canal '{name_val}'")
+                    else:
+                        raise ValueError(f"Canal sin nombre ni código en fila {idx}")
+
+            elif resource == "brands":
+                # Valores por defecto para campos NOT NULL
+                if not entity_data.get("description"):
+                    entity_data["description"] = ""
+                if not entity_data.get("website"):
+                    entity_data["website"] = ""
+                if not entity_data.get("logo_url"):
+                    entity_data["logo_url"] = ""
+
+            elif resource == "suppliers":
+                # code es obligatorio
+                if not entity_data.get("code"):
+                    name_val = entity_data.get("name", "")
+                    if name_val:
+                        code = name_val.upper().replace(" ", "").replace("-", "")[:10]
+                        entity_data["code"] = code
+                        logger.debug(f"Auto-generando code '{code}' para proveedor '{name_val}'")
+                    else:
+                        raise ValueError(f"Proveedor sin nombre ni código en fila {idx}")
+                # Valores por defecto para campos NOT NULL
+                if not entity_data.get("country"):
+                    entity_data["country"] = ""
+                if not entity_data.get("contact_email"):
+                    entity_data["contact_email"] = ""
+                if not entity_data.get("contact_phone"):
+                    entity_data["contact_phone"] = ""
+                if not entity_data.get("notes"):
+                    entity_data["notes"] = ""
+
+            # Buscar entidad existente
+            existing_q = await db.execute(
+                select(model).where(getattr(model, pk_field) == pk_value)
+            )
+            entity = existing_q.scalar_one_or_none()
+
+            if entity:
+                for k, v in entity_data.items():
+                    if k != pk_field and hasattr(entity, k):
+                        setattr(entity, k, v)
+                counts["updated"] += 1
+            else:
+                entity = model(**entity_data)
+                db.add(entity)
+                counts["created"] += 1
+
+            # Flush periódico para no saturar memoria
+            if idx % 100 == 0:
+                await db.flush()
+
+        except ValueError as e:
+            logger.warning(f"Fila {idx} omitida por error de mapeo: {e}")
+            counts["skipped"] += 1
+        except Exception as e:
+            logger.error(f"Error procesando fila {idx}: {e}")
+            counts["errors"] += 1
+
+    await db.flush()
+    await db.commit()
+    logger.info(f"Importación de '{resource}' completada: {counts}")
+    return counts
+

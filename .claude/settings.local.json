@@ -39,7 +39,8 @@
       "Bash(timeout 10 npm run dev:*)",
       "Bash(sqlite3:*)",
       "Bash(test:*)",
-      "Bash(.venv/Scripts/pip install:*)"
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(.venv/Scripts/python.exe:*)"
     ]
   }
 }

@@ -34,6 +34,7 @@ import {
   Security as SecurityIcon,
   Badge as BadgeIcon,
   Storage as StorageIcon,
+  MenuBook as DocumentationIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -51,6 +52,7 @@ const navItems = [
   { text: 'Traducciones', icon: <I18nIcon />, path: '/i18n' },
   { text: 'Atributos', icon: <AttributeIcon />, path: '/attributes' },
   { text: 'Sincronizacion', icon: <SyncIcon />, path: '/sync' },
+  { text: 'Documentacion', icon: <DocumentationIcon />, path: '/documentation' },
 ];
 
 export default function Layout() {

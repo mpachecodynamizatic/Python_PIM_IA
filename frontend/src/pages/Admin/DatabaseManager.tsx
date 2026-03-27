@@ -16,7 +16,7 @@ import {
 } from '@mui/material';
 import { CloudDownload, DataObject, Delete, DeleteForever, Settings } from '@mui/icons-material';
 import { useMutation } from '@tanstack/react-query';
-import { importFromExternalPim, purgeAllData, purgeProductsData, seedSampleData } from '../../api/database';
+import { importFromMysql, purgeAllData, purgeProductsData, seedSampleData } from '../../api/database';
 import type { DatabaseOperationResult } from '../../types/database';
 
 export default function DatabaseManager() {
@@ -66,19 +66,19 @@ export default function DatabaseManager() {
     },
   });
 
-  const importPimMutation = useMutation({
-    mutationFn: importFromExternalPim,
+  const importMysqlMutation = useMutation({
+    mutationFn: importFromMysql,
     onSuccess: (data) => {
       setResult(data);
       setError('');
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(msg || 'Error al importar datos desde PIM externo');
+      setError(msg || 'Error al importar datos desde MySQL');
     },
   });
 
-  const isPending = purgeAllMutation.isPending || purgeProductsMutation.isPending || seedMutation.isPending || importPimMutation.isPending;
+  const isPending = purgeAllMutation.isPending || purgeProductsMutation.isPending || seedMutation.isPending || importMysqlMutation.isPending;
 
   return (
     <Box>
@@ -189,46 +189,45 @@ export default function DatabaseManager() {
           </Box>
         </Paper>
 
-        {/* Card 4: Importar desde PIM Externo */}
+        {/* Card 4: Importar desde MySQL */}
         <Paper sx={{ p: 3 }}>
           <Box display="flex" alignItems="flex-start" gap={2}>
             <CloudDownload color="info" sx={{ fontSize: 40, mt: 0.5 }} />
             <Box flex={1}>
               <Typography variant="h6" gutterBottom>
-                Importar desde PIM Externo
+                Importar desde MySQL
               </Typography>
               <Typography variant="body2" color="text.secondary" paragraph>
-                Conecta con el PIM externo y recupera productos activos. Importa productos con sus
-                categorías y marcas, filtrando por estados activos (ACTIVA, PROXIMAMENTE, FIN EXISTENCIAS)
-                y marcas permitidas (AS, SV, NL, HY). Requiere configuración de variables de entorno
-                (PIM_BASE_URL, PIM_MAIL, PIM_PASSWORD).
+                Importa productos desde la base de datos MySQL usando el mapeo de campos configurado.
+                Requiere que exista un mapeo activo para 'products' con la tabla MySQL de origen.
+                Configura el mapeo en <em>Configurar Mapeo de Campos→MySQL</em> antes de importar.
               </Typography>
               <Button
                 variant="contained"
                 color="info"
-                onClick={() => importPimMutation.mutate()}
+                onClick={() => importMysqlMutation.mutate()}
                 disabled={isPending}
                 startIcon={<CloudDownload />}
               >
-                Importar desde PIM
+                Importar desde MySQL
               </Button>
             </Box>
           </Box>
         </Paper>
 
-        {/* Card 5: Configurar Mapeo de Campos PIM */}
+        {/* Card 5: Configurar Mapeo de Campos MySQL */}
         <Paper sx={{ p: 3 }}>
           <Box display="flex" alignItems="flex-start" gap={2}>
             <Settings color="primary" sx={{ fontSize: 40, mt: 0.5 }} />
             <Box flex={1}>
               <Typography variant="h6" gutterBottom>
-                Configurar Mapeo de Campos PIM
+                Configurar Mapeo de Campos MySQL
               </Typography>
               <Typography variant="body2" color="text.secondary" paragraph>
-                Configure cómo se mapean los campos del PIM externo a los campos del modelo interno.
-                Defina transformaciones personalizadas, valores por defecto y reglas de validación para
-                cada recurso (productos, categorías, marcas, etc.). Permite introspeccionar la API externa
-                para descubrir campos disponibles automáticamente.
+                Configure cómo se mapean las columnas de la base de datos MySQL a los campos del modelo
+                interno. Selecciona la tabla de origen, propone mapeos automáticamente o configúralos
+                manualmente. Soporta transformaciones (strip, upper, status_map, fk_resolve, etc.) y
+                valores por defecto para cada recurso.
               </Typography>
               <Button
                 variant="contained"

@@ -1,4 +1,4 @@
-"""Schemas para configuración de mapeo de campos PIM externo."""
+"""Schemas para configuración de mapeo de campos desde MySQL."""
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -20,6 +20,7 @@ class PimResourceMappingCreate(BaseModel):
     mappings: list[PimFieldMapping]
     defaults: dict = Field(default_factory=dict)
     transform_config: dict = Field(default_factory=dict)
+    where_clause: str | None = None
     notes: str | None = None
 
 
@@ -29,6 +30,7 @@ class PimResourceMappingUpdate(BaseModel):
     mappings: list[PimFieldMapping] | None = None
     defaults: dict | None = None
     transform_config: dict | None = None
+    where_clause: str | None = None
     notes: str | None = None
 
 
@@ -40,6 +42,7 @@ class PimResourceMappingRead(BaseModel):
     mappings: list[PimFieldMapping]
     defaults: dict
     transform_config: dict
+    where_clause: str | None
     created_by: str
     notes: str | None
     created_at: datetime
@@ -49,7 +52,7 @@ class PimResourceMappingRead(BaseModel):
 
 
 class ExternalPimFieldSchema(BaseModel):
-    """Describe un campo de la API externa (resultado de introspección)."""
+    """Describe una columna MySQL (resultado de introspección de tabla)."""
     field_path: str
     sample_value: str | None
     data_type: str
@@ -65,3 +68,39 @@ class ResourceFieldSchema(BaseModel):
     is_readonly: bool = False
     fk_constraint: dict | None = None
     choices: list[str] | None = None
+
+
+# ── Schemas MySQL ──────────────────────────────────────────────────────────────
+
+class MySQLTableInfo(BaseModel):
+    """Información de una tabla MySQL."""
+    table_name: str
+    engine: str | None = None
+    row_count: int = 0
+    table_comment: str = ""
+
+
+class MySQLColumnInfo(BaseModel):
+    """Información de una columna MySQL."""
+    column_name: str
+    data_type: str
+    column_type: str
+    is_nullable: bool
+    column_default: str | None = None
+    column_key: str = ""
+    column_comment: str = ""
+
+
+class MySQLConnectionStatus(BaseModel):
+    """Estado de la conexión MySQL."""
+    success: bool
+    version: str | None = None
+    database: str | None = None
+    host: str | None = None
+    error: str | None = None
+
+
+class ProposeMappingRequest(BaseModel):
+    """Request para proponer mapeo automático."""
+    table: str
+    resource: str

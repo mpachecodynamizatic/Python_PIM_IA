@@ -38,6 +38,9 @@ import {
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { getDashboardStats } from '../api/dashboard';
 import type { DashboardStats } from '../types/dashboard';
+import { getI18nStats } from '../api/i18n';
+import type { I18nStats } from '../api/i18n';
+import TranslationStatsChart from '../components/TranslationStatsChart';
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Borrador',
@@ -58,6 +61,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function Dashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [i18nStats, setI18nStats] = useState<I18nStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -66,6 +70,15 @@ export default function Dashboard() {
       try {
         const data = await getDashboardStats();
         setStats(data);
+
+        // Cargar estadísticas de traducciones (sin bloquear si falla)
+        try {
+          const i18nData = await getI18nStats();
+          setI18nStats(i18nData);
+        } catch (err) {
+          console.warn('Error al cargar estadísticas de traducciones:', err);
+          // No bloquear el dashboard si falla la carga de i18n stats
+        }
       } catch {
         setError('Error al cargar estadísticas del dashboard');
       } finally {
@@ -300,6 +313,13 @@ export default function Dashboard() {
           </Paper>
         </Box>
       </Box>
+
+      {/* Gráfico de traducciones por idioma */}
+      {i18nStats && (
+        <Box sx={{ mb: 3 }}>
+          <TranslationStatsChart stats={i18nStats} />
+        </Box>
+      )}
 
       {/* Completitud de datos */}
       <Box display="flex" gap={2} flexWrap="wrap" sx={{ mb: 3 }}>

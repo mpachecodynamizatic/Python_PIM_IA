@@ -21,6 +21,19 @@ export interface MissingReport {
   pages: number;
 }
 
+export interface I18nStats {
+  by_locale: {
+    [locale: string]: {
+      total: number;
+      translated: number;
+      pending: number;
+      percentage: number;
+    };
+  };
+  total_products: number;
+  locales: string[];
+}
+
 export async function listLocales(): Promise<string[]> {
   const response = await client.get<string[]>('/i18n/locales');
   return response.data;
@@ -56,4 +69,9 @@ export async function upsertTranslation(
 
 export async function deleteTranslation(sku: string, locale: string): Promise<void> {
   await client.delete(`/products/${sku}/i18n/${locale}`);
+}
+
+export async function getI18nStats(): Promise<I18nStats> {
+  const response = await client.get<I18nStats>('/i18n/stats');
+  return response.data;
 }

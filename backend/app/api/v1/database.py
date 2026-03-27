@@ -78,25 +78,27 @@ async def seed_sample_data(
     return result
 
 
-@router.post("/import-from-pim", status_code=200)
-async def import_from_external_pim(
+@router.post("/import-from-mysql", status_code=200)
+async def import_from_mysql(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_roles("admin")),
 ):
     """
-    Import data from external PIM.
+    Importa productos desde MySQL usando el mapeo configurado en el gestor de mapeo.
 
-    Connects to external PIM API using credentials from environment variables:
-    - PIM_BASE_URL
-    - PIM_MAIL
-    - PIM_PASSWORD
-
-    Retrieves products and imports them into the current database.
+    Requiere que exista un mapeo activo para el recurso 'products' con el campo
+    '__mysql_table' en transform_config.
 
     **ADMIN ONLY**
 
     Returns:
-        dict: Counts of imported/created records (products, brands, categories, skipped, errors)
+        dict: Estadísticas de importación (created, updated, skipped, errors)
     """
-    result = await database_service.import_from_external_pim(db)
-    return result
+    from app.services import pim_mapping_service
+    try:
+        counts = await pim_mapping_service.import_resource_from_mysql(db, "products")
+        return {"message": "Importación desde MySQL completada", "stats": counts}
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(400, str(e))
+
